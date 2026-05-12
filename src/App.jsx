@@ -116,8 +116,43 @@ const PROGRAM = {
   },
 };
 
+// ====== 단위 변환 ======
+const LBS_PER_KG = 2.20462;
+
+// 저장은 항상 kg. 표시할 때만 환산.
+function toDisplay(kg, unit) {
+  if (kg === null || kg === undefined || kg === "") return "";
+  const num = parseFloat(kg);
+  if (isNaN(num)) return "";
+  if (unit === "lb") {
+    return Math.round(num * LBS_PER_KG * 10) / 10; // 소수점 1자리
+  }
+  return num;
+}
+
+// 입력값을 kg로 변환해 저장
+function toKg(value, unit) {
+  if (value === null || value === undefined || value === "") return "";
+  const num = parseFloat(value);
+  if (isNaN(num)) return "";
+  if (unit === "lb") {
+    return Math.round((num / LBS_PER_KG) * 100) / 100; // 소수점 2자리
+  }
+  return num;
+}
+
+function unitLabel(unit) {
+  return unit === "lb" ? "lb" : "kg";
+}
+
+// 신체 체중 환산 (BMI 계산은 항상 kg 기준)
+function bodyWeightDisplay(kg, unit) {
+  const v = toDisplay(kg, unit);
+  return v === "" ? "—" : v;
+}
+
 // ====== 점진적 과부하 알고리즘 ======
-function getProgressionSuggestion(history, exercise) {
+function getProgressionSuggestion(history, exercise, unit = "kg") {
   if (!history || history.length === 0) {
     return { type: "start", message: "Begin your record", messageKo: "첫 기록을 시작하세요", suggestedWeight: null };
   }
@@ -130,44 +165,67 @@ function getProgressionSuggestion(history, exercise) {
   const repMax = repRange[1] || repRange[0];
   const repMin = repRange[0];
 
-  const lastWeight = parseFloat(last.sets[0].weight) || 0;
+  // 저장은 kg, 표시는 unit 기준
+  const lastWeightKg = parseFloat(last.sets[0].weight) || 0;
   const allHitMax = last.sets.every(s => parseInt(s.reps) >= repMax);
   const allHitMin = last.sets.every(s => parseInt(s.reps) >= repMin);
   const failedMin = last.sets.some(s => parseInt(s.reps) < repMin);
 
-  const increment = exercise.type === "compound" ? 2.5 : 1.25;
+  // 증량 단위: kg는 컴파운드 +2.5/아이솔레이션 +1.25
+  //          lb는 컴파운드 +5/아이솔레이션 +2.5
+  let incrementDisplay, incrementKg;
+  if (unit === "lb") {
+    incrementDisplay = exercise.type === "compound" ? 5 : 2.5;
+    incrementKg = incrementDisplay / LBS_PER_KG;
+  } else {
+    incrementDisplay = exercise.type === "compound" ? 2.5 : 1.25;
+    incrementKg = incrementDisplay;
+  }
+
+  const u = unitLabel(unit);
+  const prevDisplay = toDisplay(lastWeightKg, unit);
 
   if (allHitMax) {
+    const next = lastWeightKg + incrementKg;
     return {
       type: "increase",
-      message: `All sets cleared. Add ${increment}kg`,
-      messageKo: `모든 세트 상한 달성 · +${increment}kg`,
-      suggestedWeight: lastWeight + increment,
-      previousWeight: lastWeight,
+      message: `All sets cleared. Add ${incrementDisplay}${u}`,
+      messageKo: `모든 세트 상한 달성 · +${incrementDisplay}${u}`,
+      suggestedWeight: next,
+      suggestedWeightDisplay: toDisplay(next, unit),
+      previousWeight: lastWeightKg,
+      previousWeightDisplay: prevDisplay,
     };
   } else if (failedMin) {
+    const next = Math.max(0, lastWeightKg - incrementKg);
     return {
       type: "deload",
-      message: `Below target. Reduce ${increment}kg`,
-      messageKo: `최소 횟수 미달 · -${increment}kg`,
-      suggestedWeight: Math.max(0, lastWeight - increment),
-      previousWeight: lastWeight,
+      message: `Below target. Reduce ${incrementDisplay}${u}`,
+      messageKo: `최소 횟수 미달 · -${incrementDisplay}${u}`,
+      suggestedWeight: next,
+      suggestedWeightDisplay: toDisplay(next, unit),
+      previousWeight: lastWeightKg,
+      previousWeightDisplay: prevDisplay,
     };
   } else if (allHitMin) {
     return {
       type: "maintain",
       message: `Maintain weight, add reps`,
       messageKo: `같은 무게 유지 · 반복수 증가`,
-      suggestedWeight: lastWeight,
-      previousWeight: lastWeight,
+      suggestedWeight: lastWeightKg,
+      suggestedWeightDisplay: prevDisplay,
+      previousWeight: lastWeightKg,
+      previousWeightDisplay: prevDisplay,
     };
   }
   return {
     type: "maintain",
     message: `Maintain`,
     messageKo: `같은 무게로 진행`,
-    suggestedWeight: lastWeight,
-    previousWeight: lastWeight,
+    suggestedWeight: lastWeightKg,
+    suggestedWeightDisplay: prevDisplay,
+    previousWeight: lastWeightKg,
+    previousWeightDisplay: prevDisplay,
   };
 }
 
@@ -178,6 +236,7 @@ export default function App() {
   const [selectedExercise, setSelectedExercise] = useState(null);
   const [history, setHistory] = useState({});
   const [bodyStats, setBodyStats] = useState({ weight: "", height: "" });
+  const [unit, setUnit] = useState("kg"); // "kg" | "lb"
   const [loading, setLoading] = useState(true);
   const [showInstallHint, setShowInstallHint] = useState(false);
 
@@ -190,6 +249,10 @@ export default function App() {
       try {
         const b = localStorage.getItem("body_stats_v2");
         if (b) setBodyStats(JSON.parse(b));
+      } catch (e) {}
+      try {
+        const u = localStorage.getItem("unit_pref");
+        if (u === "kg" || u === "lb") setUnit(u);
       } catch (e) {}
       setLoading(false);
     }
@@ -218,6 +281,11 @@ export default function App() {
   const saveBodyStats = async (newStats) => {
     setBodyStats(newStats);
     try { localStorage.setItem("body_stats_v2", JSON.stringify(newStats)); } catch (e) {}
+  };
+
+  const saveUnit = (newUnit) => {
+    setUnit(newUnit);
+    try { localStorage.setItem("unit_pref", newUnit); } catch (e) {}
   };
 
   const today = new Date();
@@ -267,8 +335,10 @@ export default function App() {
           totalVolume={totalVolume}
           weekDays={recentWeek.size}
           bodyStats={bodyStats}
+          unit={unit}
           onSelectDay={(d) => { setSelectedDay(d); setView("workout"); }}
           onUpdateStats={saveBodyStats}
+          onUpdateUnit={saveUnit}
         />
       )}
 
@@ -277,6 +347,7 @@ export default function App() {
           dayKey={selectedDay}
           day={PROGRAM[selectedDay]}
           history={history}
+          unit={unit}
           onBack={() => setView("home")}
           onSelectExercise={(ex) => { setSelectedExercise(ex); setView("exercise"); }}
         />
@@ -288,6 +359,7 @@ export default function App() {
           dayKey={selectedDay}
           day={PROGRAM[selectedDay]}
           history={history[selectedExercise.id] || []}
+          unit={unit}
           onBack={() => setView("workout")}
           onSave={(session) => {
             const newHistory = { ...history };
@@ -363,13 +435,37 @@ function CornerMarks({ color = "#5a5240" }) {
 }
 
 // ====== 홈 화면 ======
-function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodyStats, onSelectDay, onUpdateStats }) {
+function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodyStats, unit, onSelectDay, onUpdateStats, onUpdateUnit }) {
   const [editStats, setEditStats] = useState(false);
-  const [tempWeight, setTempWeight] = useState(bodyStats.weight || "");
+  // bodyStats.weight는 항상 kg로 저장됨. 편집할 때만 unit 기준으로 표시
+  const [tempWeight, setTempWeight] = useState(
+    bodyStats.weight ? String(toDisplay(bodyStats.weight, unit)) : ""
+  );
   const [tempHeight, setTempHeight] = useState(bodyStats.height || "");
+
+  // 편집 모드 진입 시 현재 unit에 맞춰 입력값 동기화
+  useEffect(() => {
+    if (editStats) {
+      setTempWeight(bodyStats.weight ? String(toDisplay(bodyStats.weight, unit)) : "");
+      setTempHeight(bodyStats.height || "");
+    }
+  }, [editStats, unit, bodyStats]);
 
   const today = new Date();
   const dateStr = today.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }).toUpperCase();
+
+  const handleSaveStats = () => {
+    onUpdateStats({
+      weight: tempWeight ? String(toKg(tempWeight, unit)) : "",
+      height: tempHeight,
+    });
+    setEditStats(false);
+  };
+
+  // BMI는 항상 kg/m² 기준
+  const bmi = bodyStats.weight && bodyStats.height
+    ? (parseFloat(bodyStats.weight) / Math.pow(parseFloat(bodyStats.height) / 100, 2)).toFixed(1)
+    : "—";
 
   return (
     <div style={styles.home}>
@@ -400,15 +496,18 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
           <div style={styles.statsCardInner}>
             <div style={styles.statsTopRow}>
               <div style={styles.statsLabel}>BODY · METRICS</div>
-              <button style={styles.editBtn} onClick={() => setEditStats(!editStats)}>
-                {editStats ? "CANCEL" : "EDIT"}
-              </button>
+              <div style={styles.statsTopRight}>
+                <UnitToggle unit={unit} onChange={onUpdateUnit} />
+                <button style={styles.editBtn} onClick={() => setEditStats(!editStats)}>
+                  {editStats ? "CANCEL" : "EDIT"}
+                </button>
+              </div>
             </div>
             {editStats ? (
               <div style={styles.statsEditWrap}>
                 <div style={styles.statsInputRow}>
                   <div style={styles.statsInputWrap}>
-                    <label style={styles.statsInputLabel}>WEIGHT · kg</label>
+                    <label style={styles.statsInputLabel}>WEIGHT · {unitLabel(unit)}</label>
                     <input
                       type="number"
                       value={tempWeight}
@@ -428,29 +527,17 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
                     />
                   </div>
                 </div>
-                <button
-                  style={styles.saveStatsBtn}
-                  onClick={() => {
-                    onUpdateStats({ weight: tempWeight, height: tempHeight });
-                    setEditStats(false);
-                  }}
-                >
+                <button style={styles.saveStatsBtn} onClick={handleSaveStats}>
                   CONFIRM
                 </button>
               </div>
             ) : (
               <div style={styles.statsGrid}>
-                <StatCell label="MASS" value={bodyStats.weight || "—"} unit="kg" />
+                <StatCell label="MASS" value={bodyWeightDisplay(bodyStats.weight, unit)} unit={unitLabel(unit)} />
                 <div style={styles.vDivider} />
                 <StatCell label="STATURE" value={bodyStats.height || "—"} unit="cm" />
                 <div style={styles.vDivider} />
-                <StatCell
-                  label="INDEX"
-                  value={bodyStats.weight && bodyStats.height
-                    ? (bodyStats.weight / Math.pow(bodyStats.height / 100, 2)).toFixed(1)
-                    : "—"}
-                  unit="bmi"
-                />
+                <StatCell label="INDEX" value={bmi} unit="bmi" />
               </div>
             )}
           </div>
@@ -463,7 +550,13 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
         <div style={styles.summaryGrid}>
           <SummaryCard label="WEEK" value={weekDays} suffix="/ 7" />
           <SummaryCard label="SESSIONS" value={totalSessions} suffix="total" />
-          <SummaryCard label="VOLUME" value={(totalVolume / 1000).toFixed(1)} suffix="ton" />
+          <SummaryCard
+            label="VOLUME"
+            value={unit === "lb"
+              ? (totalVolume * LBS_PER_KG / 1000).toFixed(1)
+              : (totalVolume / 1000).toFixed(1)}
+            suffix={unit === "lb" ? "k lb" : "ton"}
+          />
         </div>
       </section>
 
@@ -526,6 +619,31 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
 }
 
 // ====== 보조 컴포넌트 ======
+function UnitToggle({ unit, onChange }) {
+  return (
+    <div style={styles.unitToggle}>
+      <button
+        style={{
+          ...styles.unitToggleBtn,
+          ...(unit === "kg" ? styles.unitToggleBtnActive : {}),
+        }}
+        onClick={() => onChange("kg")}
+      >
+        KG
+      </button>
+      <button
+        style={{
+          ...styles.unitToggleBtn,
+          ...(unit === "lb" ? styles.unitToggleBtnActive : {}),
+        }}
+        onClick={() => onChange("lb")}
+      >
+        LB
+      </button>
+    </div>
+  );
+}
+
 function SectionHeader({ number, title, titleKo }) {
   return (
     <div style={styles.sectionHeader}>
@@ -563,7 +681,7 @@ function SummaryCard({ label, value, suffix }) {
 }
 
 // ====== 운동 일자 화면 ======
-function WorkoutView({ dayKey, day, history, onBack, onSelectExercise }) {
+function WorkoutView({ dayKey, day, history, unit, onBack, onSelectExercise }) {
   const totalExercises = day.groups.reduce((s, g) => s + g.exercises.length, 0);
   const completedToday = day.groups.reduce((s, g) => {
     return s + g.exercises.filter(ex => {
@@ -614,7 +732,7 @@ function WorkoutView({ dayKey, day, history, onBack, onSelectExercise }) {
               const sessions = history[ex.id] || [];
               const last = sessions[sessions.length - 1];
               const isToday = last && new Date(last.date).toDateString() === new Date().toDateString();
-              const suggestion = getProgressionSuggestion(sessions, ex);
+              const suggestion = getProgressionSuggestion(sessions, ex, unit);
 
               return (
                 <div
@@ -641,7 +759,7 @@ function WorkoutView({ dayKey, day, history, onBack, onSelectExercise }) {
                     {suggestion.suggestedWeight !== null && (
                       <div style={styles.exerciseSuggestion}>
                         <TrendingUp size={11} />
-                        <span>NEXT · {suggestion.suggestedWeight}kg</span>
+                        <span>NEXT · {suggestion.suggestedWeightDisplay}{unitLabel(unit)}</span>
                         {suggestion.type === "increase" && <span style={styles.suggestionUp}>↑</span>}
                       </div>
                     )}
@@ -660,9 +778,12 @@ function WorkoutView({ dayKey, day, history, onBack, onSelectExercise }) {
 }
 
 // ====== 운동 기록 화면 ======
-function ExerciseView({ exercise, dayKey, day, history, onBack, onSave, onDelete }) {
-  const suggestion = getProgressionSuggestion(history, exercise);
-  const initialWeight = suggestion.suggestedWeight !== null ? String(suggestion.suggestedWeight) : "";
+function ExerciseView({ exercise, dayKey, day, history, unit, onBack, onSave, onDelete }) {
+  const suggestion = getProgressionSuggestion(history, exercise, unit);
+  // 입력 필드에 표시할 초기값은 unit 기준
+  const initialWeight = suggestion.suggestedWeight !== null
+    ? String(suggestion.suggestedWeightDisplay)
+    : "";
 
   const [sets, setSets] = useState(
     Array(exercise.sets).fill(null).map(() => ({ weight: initialWeight, reps: "" }))
@@ -676,13 +797,19 @@ function ExerciseView({ exercise, dayKey, day, history, onBack, onSave, onDelete
   };
 
   const fillAll = (weight) => {
+    // weight는 unit 기준으로 들어옴
     setSets(sets.map(s => ({ ...s, weight: String(weight) })));
   };
 
   const handleSave = () => {
     const validSets = sets.filter(s => s.weight && s.reps);
     if (validSets.length === 0) return;
-    onSave({ date: new Date().toISOString(), sets: validSets });
+    // 저장 시 kg로 변환
+    const setsInKg = validSets.map(s => ({
+      weight: String(toKg(s.weight, unit)),
+      reps: s.reps,
+    }));
+    onSave({ date: new Date().toISOString(), sets: setsInKg });
   };
 
   return (
@@ -738,7 +865,7 @@ function ExerciseView({ exercise, dayKey, day, history, onBack, onSave, onDelete
               <div style={styles.suggestionStats}>
                 <div style={styles.suggestionPrev}>
                   <div style={styles.suggestionPrevLabel}>PREVIOUS</div>
-                  <div style={styles.suggestionPrevValue}>{suggestion.previousWeight}<span style={styles.kgSmall}>kg</span></div>
+                  <div style={styles.suggestionPrevValue}>{suggestion.previousWeightDisplay}<span style={styles.kgSmall}>{unitLabel(unit)}</span></div>
                 </div>
                 <div style={styles.suggestionArrow}>
                   <span style={styles.arrowLine} />
@@ -746,11 +873,11 @@ function ExerciseView({ exercise, dayKey, day, history, onBack, onSave, onDelete
                 </div>
                 <div style={styles.suggestionNext}>
                   <div style={styles.suggestionNextLabel}>RECOMMENDED</div>
-                  <div style={styles.suggestionNextValue}>{suggestion.suggestedWeight}<span style={styles.kgSmall}>kg</span></div>
+                  <div style={styles.suggestionNextValue}>{suggestion.suggestedWeightDisplay}<span style={styles.kgSmall}>{unitLabel(unit)}</span></div>
                 </div>
               </div>
             )}
-            <button style={styles.applyBtn} onClick={() => fillAll(suggestion.suggestedWeight)}>
+            <button style={styles.applyBtn} onClick={() => fillAll(suggestion.suggestedWeightDisplay)}>
               APPLY TO ALL SETS
             </button>
           </div>
@@ -776,7 +903,7 @@ function ExerciseView({ exercise, dayKey, day, history, onBack, onSave, onDelete
         <div style={styles.setsTable}>
           <div style={styles.setsTableHeader}>
             <div style={styles.setsHeadIdx}>SET</div>
-            <div style={styles.setsHeadCell}>WEIGHT · KG</div>
+            <div style={styles.setsHeadCell}>WEIGHT · {unitLabel(unit).toUpperCase()}</div>
             <div style={styles.setsHeadCell}>REPS</div>
           </div>
           {sets.map((set, idx) => (
@@ -827,7 +954,11 @@ function ExerciseView({ exercise, dayKey, day, history, onBack, onSave, onDelete
               {[...history].reverse().map((session, idx) => {
                 const realIdx = history.length - 1 - idx;
                 const date = new Date(session.date);
-                const volume = session.sets.reduce((s, set) => s + (parseFloat(set.weight) || 0) * (parseInt(set.reps) || 0), 0);
+                // 볼륨은 kg 기준으로 계산 후 unit으로 환산
+                const volumeKg = session.sets.reduce((s, set) => s + (parseFloat(set.weight) || 0) * (parseInt(set.reps) || 0), 0);
+                const volumeDisplay = unit === "lb"
+                  ? Math.round(volumeKg * LBS_PER_KG)
+                  : Math.round(volumeKg);
                 return (
                   <div key={idx} style={styles.historyCard}>
                     <CornerMarks color="#8b7d65" />
@@ -845,13 +976,13 @@ function ExerciseView({ exercise, dayKey, day, history, onBack, onSave, onDelete
                         {session.sets.map((set, si) => (
                           <div key={si} style={styles.historySetItem}>
                             <span style={styles.historySetNum}>S{si + 1}</span>
-                            <span style={styles.historySetVal}>{set.weight}<span style={styles.kgTiny}>kg</span> × {set.reps}</span>
+                            <span style={styles.historySetVal}>{toDisplay(set.weight, unit)}<span style={styles.kgTiny}>{unitLabel(unit)}</span> × {set.reps}</span>
                           </div>
                         ))}
                       </div>
                       <div style={styles.historyVolumeRow}>
                         <span style={styles.historyVolLabel}>TOTAL VOLUME</span>
-                        <span style={styles.historyVolValue}>{volume.toLocaleString()}<span style={styles.kgTiny}>kg</span></span>
+                        <span style={styles.historyVolValue}>{volumeDisplay.toLocaleString()}<span style={styles.kgTiny}>{unitLabel(unit)}</span></span>
                       </div>
                     </div>
                   </div>
@@ -1136,6 +1267,33 @@ const styles = {
     marginBottom: "16px",
     paddingBottom: "12px",
     borderBottom: `1px dashed ${COLOR.line}`,
+  },
+  statsTopRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+  // UnitToggle
+  unitToggle: {
+    display: "inline-flex",
+    border: `1px solid ${COLOR.khakiMid}`,
+    borderRadius: "1px",
+    overflow: "hidden",
+    background: "rgba(255,255,255,0.3)",
+  },
+  unitToggleBtn: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "9px",
+    letterSpacing: "0.15em",
+    fontWeight: 600,
+    padding: "5px 9px",
+    color: COLOR.textMute,
+    background: "transparent",
+    transition: "all 0.15s ease",
+  },
+  unitToggleBtnActive: {
+    background: COLOR.bgDark,
+    color: COLOR.accentBrass,
   },
   statsLabel: {
     fontSize: "9px",

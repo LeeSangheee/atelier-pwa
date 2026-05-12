@@ -335,10 +335,8 @@ export default function App() {
           totalVolume={totalVolume}
           weekDays={recentWeek.size}
           bodyStats={bodyStats}
-          unit={unit}
           onSelectDay={(d) => { setSelectedDay(d); setView("workout"); }}
           onUpdateStats={saveBodyStats}
-          onUpdateUnit={saveUnit}
         />
       )}
 
@@ -360,6 +358,7 @@ export default function App() {
           day={PROGRAM[selectedDay]}
           history={history[selectedExercise.id] || []}
           unit={unit}
+          onUpdateUnit={saveUnit}
           onBack={() => setView("workout")}
           onSave={(session) => {
             const newHistory = { ...history };
@@ -435,28 +434,26 @@ function CornerMarks({ color = "#5a5240" }) {
 }
 
 // ====== 홈 화면 ======
-function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodyStats, unit, onSelectDay, onUpdateStats, onUpdateUnit }) {
+function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodyStats, unit, onSelectDay, onUpdateStats }) {
   const [editStats, setEditStats] = useState(false);
-  // bodyStats.weight는 항상 kg로 저장됨. 편집할 때만 unit 기준으로 표시
-  const [tempWeight, setTempWeight] = useState(
-    bodyStats.weight ? String(toDisplay(bodyStats.weight, unit)) : ""
-  );
+  // 신체 기록은 kg 고정 (메인 화면이 깔끔하도록)
+  const [tempWeight, setTempWeight] = useState(bodyStats.weight || "");
   const [tempHeight, setTempHeight] = useState(bodyStats.height || "");
 
-  // 편집 모드 진입 시 현재 unit에 맞춰 입력값 동기화
+  // 편집 모드 진입 시 동기화
   useEffect(() => {
     if (editStats) {
-      setTempWeight(bodyStats.weight ? String(toDisplay(bodyStats.weight, unit)) : "");
+      setTempWeight(bodyStats.weight || "");
       setTempHeight(bodyStats.height || "");
     }
-  }, [editStats, unit, bodyStats]);
+  }, [editStats, bodyStats]);
 
   const today = new Date();
   const dateStr = today.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }).toUpperCase();
 
   const handleSaveStats = () => {
     onUpdateStats({
-      weight: tempWeight ? String(toKg(tempWeight, unit)) : "",
+      weight: tempWeight,
       height: tempHeight,
     });
     setEditStats(false);
@@ -496,18 +493,15 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
           <div style={styles.statsCardInner}>
             <div style={styles.statsTopRow}>
               <div style={styles.statsLabel}>BODY · METRICS</div>
-              <div style={styles.statsTopRight}>
-                <UnitToggle unit={unit} onChange={onUpdateUnit} />
-                <button style={styles.editBtn} onClick={() => setEditStats(!editStats)}>
-                  {editStats ? "CANCEL" : "EDIT"}
-                </button>
-              </div>
+              <button style={styles.editBtn} onClick={() => setEditStats(!editStats)}>
+                {editStats ? "CANCEL" : "EDIT"}
+              </button>
             </div>
             {editStats ? (
               <div style={styles.statsEditWrap}>
                 <div style={styles.statsInputRow}>
                   <div style={styles.statsInputWrap}>
-                    <label style={styles.statsInputLabel}>WEIGHT · {unitLabel(unit)}</label>
+                    <label style={styles.statsInputLabel}>WEIGHT · kg</label>
                     <input
                       type="number"
                       value={tempWeight}
@@ -533,7 +527,7 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
               </div>
             ) : (
               <div style={styles.statsGrid}>
-                <StatCell label="MASS" value={bodyWeightDisplay(bodyStats.weight, unit)} unit={unitLabel(unit)} />
+                <StatCell label="MASS" value={bodyStats.weight || "—"} unit="kg" />
                 <div style={styles.vDivider} />
                 <StatCell label="STATURE" value={bodyStats.height || "—"} unit="cm" />
                 <div style={styles.vDivider} />
@@ -550,13 +544,7 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
         <div style={styles.summaryGrid}>
           <SummaryCard label="WEEK" value={weekDays} suffix="/ 7" />
           <SummaryCard label="SESSIONS" value={totalSessions} suffix="total" />
-          <SummaryCard
-            label="VOLUME"
-            value={unit === "lb"
-              ? (totalVolume * LBS_PER_KG / 1000).toFixed(1)
-              : (totalVolume / 1000).toFixed(1)}
-            suffix={unit === "lb" ? "k lb" : "ton"}
-          />
+          <SummaryCard label="VOLUME" value={(totalVolume / 1000).toFixed(1)} suffix="ton" />
         </div>
       </section>
 
@@ -778,7 +766,7 @@ function WorkoutView({ dayKey, day, history, unit, onBack, onSelectExercise }) {
 }
 
 // ====== 운동 기록 화면 ======
-function ExerciseView({ exercise, dayKey, day, history, unit, onBack, onSave, onDelete }) {
+function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBack, onSave, onDelete }) {
   const suggestion = getProgressionSuggestion(history, exercise, unit);
   // 입력 필드에 표시할 초기값은 unit 기준
   const initialWeight = suggestion.suggestedWeight !== null
@@ -799,6 +787,19 @@ function ExerciseView({ exercise, dayKey, day, history, unit, onBack, onSave, on
   const fillAll = (weight) => {
     // weight는 unit 기준으로 들어옴
     setSets(sets.map(s => ({ ...s, weight: String(weight) })));
+  };
+
+  // 단위 토글 시 현재 입력된 sets의 weight를 환산
+  const handleUnitChange = (newUnit) => {
+    if (newUnit === unit) return;
+    // 현재 표시값(unit) → kg → 새 단위(newUnit)으로 환산
+    const converted = sets.map(s => {
+      if (!s.weight) return s;
+      const inKg = toKg(s.weight, unit);
+      return { ...s, weight: String(toDisplay(inKg, newUnit)) };
+    });
+    setSets(converted);
+    onUpdateUnit(newUnit);
   };
 
   const handleSave = () => {
@@ -897,8 +898,11 @@ function ExerciseView({ exercise, dayKey, day, history, unit, onBack, onSave, on
       {/* 세트 입력 */}
       <div style={styles.setsBlock}>
         <div style={styles.setsBlockHeader}>
-          <div style={styles.setsBlockTitle}>TODAY'S SETS</div>
-          <div style={styles.setsBlockSub}>오늘의 세트 · 휴식 {exercise.rest}</div>
+          <div style={styles.setsBlockTitleWrap}>
+            <div style={styles.setsBlockTitle}>TODAY'S SETS</div>
+            <div style={styles.setsBlockSub}>오늘의 세트 · 휴식 {exercise.rest}</div>
+          </div>
+          <UnitToggle unit={unit} onChange={handleUnitChange} />
         </div>
         <div style={styles.setsTable}>
           <div style={styles.setsTableHeader}>
@@ -2052,9 +2056,15 @@ const styles = {
     marginBottom: "12px",
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "baseline",
+    alignItems: "center",
     paddingBottom: "10px",
     borderBottom: `1px solid ${COLOR.line}`,
+    gap: "12px",
+  },
+  setsBlockTitleWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
   },
   setsBlockTitle: {
     fontFamily: "'KakaoBigFont', sans-serif",
@@ -2062,6 +2072,7 @@ const styles = {
     fontWeight: 800,
     color: COLOR.textDark,
     letterSpacing: "-0.03em",
+    lineHeight: 1,
   },
   setsBlockSub: {
     fontSize: "9px",

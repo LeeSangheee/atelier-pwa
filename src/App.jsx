@@ -895,6 +895,9 @@ function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBa
         </div>
       )}
 
+      {/* 쉬는시간 타이머 */}
+      <RestTimer />
+
       {/* 세트 입력 */}
       <div style={styles.setsBlock}>
         <div style={styles.setsBlockHeader}>
@@ -935,8 +938,6 @@ function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBa
           ))}
         </div>
       </div>
-
-      <RestTimer />
 
       <button
         style={{ ...styles.saveBtn, opacity: sets.some(s => s.weight && s.reps) ? 1 : 0.4 }}

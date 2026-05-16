@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { TrendingUp, Calendar, Check, ChevronRight, ChevronLeft, Trash2 } from "lucide-react";
 
 // ====== 운동 프로그램 데이터 ======
@@ -239,6 +239,8 @@ export default function App() {
   const [unit, setUnit] = useState("kg"); // "kg" | "lb"
   const [loading, setLoading] = useState(true);
   const [showInstallHint, setShowInstallHint] = useState(false);
+  // 사용자가 편집 가능한 프로그램 데이터 (localStorage에 영속 저장)
+  const [program, setProgram] = useState(PROGRAM);
 
   useEffect(() => {
     async function load() {
@@ -253,6 +255,11 @@ export default function App() {
       try {
         const u = localStorage.getItem("unit_pref");
         if (u === "kg" || u === "lb") setUnit(u);
+      } catch (e) {}
+      // 사용자 커스텀 프로그램 데이터 로드
+      try {
+        const p = localStorage.getItem("program_v1");
+        if (p) setProgram(JSON.parse(p));
       } catch (e) {}
       setLoading(false);
     }
@@ -286,6 +293,12 @@ export default function App() {
   const saveUnit = (newUnit) => {
     setUnit(newUnit);
     try { localStorage.setItem("unit_pref", newUnit); } catch (e) {}
+  };
+
+  // 프로그램(운동 종목) 수정 후 localStorage에 영속 저장
+  const saveProgram = (newProgram) => {
+    setProgram(newProgram);
+    try { localStorage.setItem("program_v1", JSON.stringify(newProgram)); } catch (e) {}
   };
 
   const today = new Date();
@@ -343,7 +356,9 @@ export default function App() {
       {view === "workout" && selectedDay && (
         <WorkoutView
           dayKey={selectedDay}
-          day={PROGRAM[selectedDay]}
+          day={program[selectedDay]}
+          program={program}
+          onUpdateProgram={saveProgram}
           history={history}
           unit={unit}
           onBack={() => setView("home")}
@@ -355,7 +370,7 @@ export default function App() {
         <ExerciseView
           exercise={selectedExercise}
           dayKey={selectedDay}
-          day={PROGRAM[selectedDay]}
+          day={program[selectedDay]}
           history={history[selectedExercise.id] || []}
           unit={unit}
           onUpdateUnit={saveUnit}
@@ -669,7 +684,11 @@ function SummaryCard({ label, value, suffix }) {
 }
 
 // ====== 운동 일자 화면 ======
-function WorkoutView({ dayKey, day, history, unit, onBack, onSelectExercise }) {
+function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onBack, onSelectExercise }) {
+  const [editTarget, setEditTarget] = useState(null); // { groupIdx, exerciseIdx } | null (null = 추가)
+  const longPressTimer = useRef(null);
+  const longPressActive = useRef(false);
+
   const totalExercises = day.groups.reduce((s, g) => s + g.exercises.length, 0);
   const completedToday = day.groups.reduce((s, g) => {
     return s + g.exercises.filter(ex => {
@@ -679,6 +698,40 @@ function WorkoutView({ dayKey, day, history, unit, onBack, onSelectExercise }) {
       return new Date(last.date).toDateString() === new Date().toDateString();
     }).length;
   }, 0);
+
+  // 롱프레스 시작 (500ms)
+  const startLongPress = (groupIdx, exerciseIdx) => {
+    longPressActive.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressActive.current = true;
+      setEditTarget({ groupIdx, exerciseIdx });
+    }, 500);
+  };
+
+  // 롱프레스 취소 (손가락 뗌 / 이동)
+  const cancelLongPress = () => {
+    clearTimeout(longPressTimer.current);
+  };
+
+  // 운동 저장 (수정 또는 추가)
+  const handleSaveExercise = (groupIdx, exerciseIdx, updated) => {
+    const newProgram = JSON.parse(JSON.stringify(program));
+    if (exerciseIdx === null) {
+      newProgram[dayKey].groups[groupIdx].exercises.push(updated);
+    } else {
+      newProgram[dayKey].groups[groupIdx].exercises[exerciseIdx] = updated;
+    }
+    onUpdateProgram(newProgram);
+    setEditTarget(null);
+  };
+
+  // 운동 삭제
+  const handleDeleteExercise = (groupIdx, exerciseIdx) => {
+    const newProgram = JSON.parse(JSON.stringify(program));
+    newProgram[dayKey].groups[groupIdx].exercises.splice(exerciseIdx, 1);
+    onUpdateProgram(newProgram);
+    setEditTarget(null);
+  };
 
   return (
     <div style={styles.workoutPage}>
@@ -697,7 +750,7 @@ function WorkoutView({ dayKey, day, history, unit, onBack, onSelectExercise }) {
           <div style={styles.dayProgressRow}>
             <div style={styles.dayProgressLabel}>SESSION PROGRESS</div>
             <div style={styles.dayProgressBar}>
-              <div style={{ ...styles.dayProgressFill, width: `${(completedToday / totalExercises) * 100}%` }} />
+              <div style={{ ...styles.dayProgressFill, width: `${(completedToday / Math.max(totalExercises, 1)) * 100}%` }} />
             </div>
             <div style={styles.dayProgressText}>{completedToday}/{totalExercises}</div>
           </div>
@@ -713,7 +766,7 @@ function WorkoutView({ dayKey, day, history, unit, onBack, onSelectExercise }) {
                 <div style={styles.muscleName}>{group.muscle}</div>
                 <div style={styles.muscleNameKo}>{group.muscleKo}</div>
               </div>
-              <div style={styles.muscleSetsBadge}>12 SETS</div>
+              <div style={styles.muscleSetsBadge}>{group.exercises.length * 4} SETS</div>
             </div>
 
             {group.exercises.map((ex, ei) => {
@@ -726,7 +779,16 @@ function WorkoutView({ dayKey, day, history, unit, onBack, onSelectExercise }) {
                 <div
                   key={ex.id}
                   style={{ ...styles.exerciseCard, opacity: isToday ? 0.55 : 1 }}
-                  onClick={() => onSelectExercise(ex)}
+                  onTouchStart={() => startLongPress(gi, ei)}
+                  onTouchEnd={cancelLongPress}
+                  onTouchMove={cancelLongPress}
+                  onClick={() => {
+                    if (longPressActive.current) {
+                      longPressActive.current = false;
+                      return;
+                    }
+                    onSelectExercise(ex);
+                  }}
                 >
                   <div style={styles.exerciseCardLeft}>
                     <div style={styles.exerciseIndex}>{String(ei + 1).padStart(2, "0")}</div>
@@ -758,8 +820,184 @@ function WorkoutView({ dayKey, day, history, unit, onBack, onSelectExercise }) {
                 </div>
               );
             })}
+
+            {/* 운동 추가 버튼 */}
+            <button
+              style={styles.addExerciseBtn}
+              onClick={() => setEditTarget({ groupIdx: gi, exerciseIdx: null })}
+            >
+              <span style={styles.addExerciseBtnLabel}>+ 운동 추가</span>
+            </button>
           </div>
         ))}
+      </div>
+
+      {/* 운동 편집/추가 시트 */}
+      {editTarget && (
+        <ExerciseEditSheet
+          exercise={
+            editTarget.exerciseIdx !== null
+              ? day.groups[editTarget.groupIdx].exercises[editTarget.exerciseIdx]
+              : null
+          }
+          isNew={editTarget.exerciseIdx === null}
+          onSave={(updated) => handleSaveExercise(editTarget.groupIdx, editTarget.exerciseIdx, updated)}
+          onDelete={() => handleDeleteExercise(editTarget.groupIdx, editTarget.exerciseIdx)}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ====== 운동 편집 / 추가 시트 ======
+function ExerciseEditSheet({ exercise, isNew, onSave, onDelete, onClose }) {
+  const [nameKo, setNameKo] = useState(exercise?.nameKo ?? "");
+  const [name, setName] = useState(exercise?.name ?? "");
+  const [sets, setSets] = useState(String(exercise?.sets ?? 3));
+  const [reps, setReps] = useState(exercise?.reps ?? "8-12");
+  const [rpe, setRpe] = useState(exercise?.rpe ?? "8");
+  const [rest, setRest] = useState(exercise?.rest ?? "90초");
+  const [type, setType] = useState(exercise?.type ?? "isolation");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const handleSave = () => {
+    if (!nameKo.trim()) return;
+    onSave({
+      id: exercise?.id ?? `custom_${Date.now()}`,
+      nameKo: nameKo.trim(),
+      name: name.trim() || nameKo.trim(),
+      sets: Math.max(1, parseInt(sets) || 3),
+      reps,
+      rpe,
+      rest,
+      type,
+    });
+  };
+
+  return (
+    <div style={styles.sheetOverlay} onClick={onClose}>
+      <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+        {/* 드래그 핸들 */}
+        <div style={styles.sheetHandleWrap}>
+          <div style={styles.sheetHandle} />
+        </div>
+
+        {/* 헤더 */}
+        <div style={styles.sheetHeader}>
+          <div style={styles.sheetTitleBlock}>
+            <div style={styles.sheetTitle}>{isNew ? "운동 추가" : "운동 편집"}</div>
+            <div style={styles.sheetTitleSub}>{isNew ? "ADD EXERCISE" : "EDIT EXERCISE"}</div>
+          </div>
+          <button style={styles.sheetCloseBtn} onClick={onClose}>×</button>
+        </div>
+
+        <div style={styles.sheetBody}>
+          {/* 종류 토글 */}
+          <div style={styles.sheetFieldGroup}>
+            <div style={styles.sheetFieldLabel}>종류 · TYPE</div>
+            <div style={styles.typeToggle}>
+              <button
+                style={{ ...styles.typeToggleBtn, ...(type === "compound" ? styles.typeToggleBtnActive : {}) }}
+                onClick={() => setType("compound")}
+              >
+                ◆ COMPOUND
+              </button>
+              <button
+                style={{ ...styles.typeToggleBtn, ...(type === "isolation" ? styles.typeToggleBtnActive : {}) }}
+                onClick={() => setType("isolation")}
+              >
+                ◇ ISOLATION
+              </button>
+            </div>
+          </div>
+
+          {/* 운동명 */}
+          <div style={styles.sheetFieldGroup}>
+            <label style={styles.sheetFieldLabel}>운동명 (한글) *</label>
+            <input
+              style={styles.sheetInput}
+              value={nameKo}
+              onChange={(e) => setNameKo(e.target.value)}
+              placeholder="예: 바벨 벤치프레스"
+            />
+          </div>
+          <div style={styles.sheetFieldGroup}>
+            <label style={styles.sheetFieldLabel}>Exercise Name</label>
+            <input
+              style={styles.sheetInput}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Barbell Bench Press"
+            />
+          </div>
+
+          {/* 수치 정보 4열 */}
+          <div style={styles.sheetGrid}>
+            <div style={styles.sheetGridItem}>
+              <label style={styles.sheetFieldLabel}>세트</label>
+              <input
+                style={styles.sheetInputSm}
+                type="number"
+                value={sets}
+                onChange={(e) => setSets(e.target.value)}
+                inputMode="numeric"
+                placeholder="4"
+              />
+            </div>
+            <div style={styles.sheetGridItem}>
+              <label style={styles.sheetFieldLabel}>횟수</label>
+              <input
+                style={styles.sheetInputSm}
+                value={reps}
+                onChange={(e) => setReps(e.target.value)}
+                placeholder="8-12"
+              />
+            </div>
+            <div style={styles.sheetGridItem}>
+              <label style={styles.sheetFieldLabel}>RPE</label>
+              <input
+                style={styles.sheetInputSm}
+                value={rpe}
+                onChange={(e) => setRpe(e.target.value)}
+                placeholder="8"
+              />
+            </div>
+            <div style={styles.sheetGridItem}>
+              <label style={styles.sheetFieldLabel}>휴식</label>
+              <input
+                style={styles.sheetInputSm}
+                value={rest}
+                onChange={(e) => setRest(e.target.value)}
+                placeholder="90초"
+              />
+            </div>
+          </div>
+
+          {/* 저장 */}
+          <button
+            style={{ ...styles.sheetSaveBtn, opacity: nameKo.trim() ? 1 : 0.35 }}
+            onClick={handleSave}
+            disabled={!nameKo.trim()}
+          >
+            {isNew ? "추가하기" : "저장하기"}
+          </button>
+
+          {/* 삭제 */}
+          {!isNew && (
+            confirmDelete ? (
+              <div style={styles.sheetDeleteConfirm}>
+                <span style={styles.sheetDeleteConfirmText}>정말 삭제할까요?</span>
+                <button style={styles.sheetDeleteConfirmYes} onClick={onDelete}>삭제</button>
+                <button style={styles.sheetDeleteConfirmNo} onClick={() => setConfirmDelete(false)}>취소</button>
+              </div>
+            ) : (
+              <button style={styles.sheetDeleteBtn} onClick={() => setConfirmDelete(true)}>
+                이 운동 삭제
+              </button>
+            )
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1126,6 +1364,11 @@ const globalCSS = `
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0.45; }
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
   }
 `;
 
@@ -2396,6 +2639,218 @@ const styles = {
     fontSize: "14px",
     fontWeight: 700,
     color: COLOR.brownMid,
+  },
+
+  // === ADD EXERCISE BUTTON ===
+  addExerciseBtn: {
+    width: "100%",
+    padding: "11px",
+    marginTop: "6px",
+    border: `1px dashed ${COLOR.khakiMid}`,
+    borderRadius: "2px",
+    background: "transparent",
+    color: COLOR.khakiDeep,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addExerciseBtnLabel: {
+    fontSize: "11px",
+    letterSpacing: "0.2em",
+    fontWeight: 600,
+  },
+
+  // === EXERCISE EDIT SHEET ===
+  sheetOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15, 13, 10, 0.65)",
+    zIndex: 300,
+    display: "flex",
+    alignItems: "flex-end",
+  },
+  sheet: {
+    width: "100%",
+    background: `linear-gradient(180deg, #f5efdf 0%, ${COLOR.bgPaper} 100%)`,
+    borderRadius: "10px 10px 0 0",
+    border: `1px solid ${COLOR.line}`,
+    borderBottom: "none",
+    maxHeight: "90vh",
+    overflowY: "auto",
+    animation: "slideUp 0.28s ease",
+  },
+  sheetHandleWrap: {
+    display: "flex",
+    justifyContent: "center",
+    padding: "12px 0 4px",
+  },
+  sheetHandle: {
+    width: "36px",
+    height: "4px",
+    background: COLOR.line,
+    borderRadius: "2px",
+  },
+  sheetHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    padding: "12px 20px 0",
+    marginBottom: "4px",
+  },
+  sheetTitleBlock: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+  },
+  sheetTitle: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 800,
+    fontSize: "22px",
+    letterSpacing: "-0.03em",
+    color: COLOR.textDark,
+  },
+  sheetTitleSub: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "9px",
+    letterSpacing: "0.35em",
+    color: COLOR.textMute,
+    fontWeight: 500,
+  },
+  sheetCloseBtn: {
+    fontSize: "26px",
+    fontWeight: 300,
+    color: COLOR.khakiMid,
+    lineHeight: 1,
+    padding: "0 4px",
+  },
+  sheetBody: {
+    padding: "16px 20px 40px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+  },
+  sheetFieldGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+  },
+  sheetFieldLabel: {
+    fontSize: "8px",
+    letterSpacing: "0.25em",
+    color: COLOR.khakiDeep,
+    fontWeight: 700,
+  },
+  sheetInput: {
+    width: "100%",
+    padding: "12px 14px",
+    border: `1px solid ${COLOR.khakiMid}`,
+    borderRadius: "2px",
+    fontSize: "15px",
+    fontWeight: 600,
+    fontFamily: "'KakaoBigFont', sans-serif",
+    background: "rgba(255,255,255,0.5)",
+    outline: "none",
+    color: COLOR.textDark,
+  },
+  sheetGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: "8px",
+  },
+  sheetGridItem: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+  },
+  sheetInputSm: {
+    width: "100%",
+    padding: "10px 6px",
+    border: `1px solid ${COLOR.khakiMid}`,
+    borderRadius: "2px",
+    fontSize: "14px",
+    fontWeight: 700,
+    fontFamily: "'Geist Mono', monospace",
+    background: "rgba(255,255,255,0.5)",
+    outline: "none",
+    color: COLOR.textDark,
+    textAlign: "center",
+  },
+  typeToggle: {
+    display: "flex",
+    gap: "8px",
+  },
+  typeToggleBtn: {
+    flex: 1,
+    padding: "10px 8px",
+    border: `1px solid ${COLOR.khakiMid}`,
+    borderRadius: "2px",
+    fontSize: "10px",
+    letterSpacing: "0.15em",
+    fontWeight: 700,
+    color: COLOR.khakiMid,
+    background: "rgba(255,255,255,0.3)",
+    fontFamily: "'Geist Mono', monospace",
+    transition: "all 0.15s ease",
+  },
+  typeToggleBtnActive: {
+    background: COLOR.bgDark,
+    color: COLOR.accentBrass,
+    borderColor: COLOR.bgDark,
+  },
+  sheetSaveBtn: {
+    width: "100%",
+    padding: "15px",
+    background: COLOR.bgDark,
+    color: COLOR.bgPaper,
+    borderRadius: "2px",
+    fontSize: "12px",
+    fontWeight: 700,
+    letterSpacing: "0.25em",
+    fontFamily: "'KakaoBigFont', sans-serif",
+    marginTop: "4px",
+  },
+  sheetDeleteBtn: {
+    width: "100%",
+    padding: "13px",
+    border: `1px solid ${COLOR.line}`,
+    borderRadius: "2px",
+    fontSize: "12px",
+    fontWeight: 600,
+    letterSpacing: "0.1em",
+    color: "#a05040",
+    background: "transparent",
+    fontFamily: "'KakaoBigFont', sans-serif",
+  },
+  sheetDeleteConfirm: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 0",
+  },
+  sheetDeleteConfirmText: {
+    flex: 1,
+    fontSize: "13px",
+    fontWeight: 600,
+    color: COLOR.textMid,
+    letterSpacing: "-0.01em",
+  },
+  sheetDeleteConfirmYes: {
+    padding: "10px 18px",
+    background: "#a05040",
+    color: COLOR.bgPaper,
+    borderRadius: "2px",
+    fontSize: "12px",
+    fontWeight: 700,
+    letterSpacing: "0.1em",
+  },
+  sheetDeleteConfirmNo: {
+    padding: "10px 18px",
+    border: `1px solid ${COLOR.line}`,
+    borderRadius: "2px",
+    fontSize: "12px",
+    fontWeight: 600,
+    color: COLOR.textMute,
+    background: "transparent",
   },
 
   // === REST TIMER ===

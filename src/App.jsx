@@ -936,6 +936,8 @@ function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBa
         </div>
       </div>
 
+      <RestTimer />
+
       <button
         style={{ ...styles.saveBtn, opacity: sets.some(s => s.weight && s.reps) ? 1 : 0.4 }}
         onClick={handleSave}
@@ -1000,10 +1002,130 @@ function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBa
   );
 }
 
+// ====== 쉬는시간 타이머 ======
+function RestTimer() {
+  const [seconds, setSeconds] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(false);
+
+  // 1초마다 카운트다운. running이 true일 때만 작동
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      setSeconds(s => {
+        if (s <= 1) {
+          // 타이머 종료 → 완료 알림 표시
+          setRunning(false);
+          setDone(true);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  // 시간 추가 (초 단위)
+  const addTime = (s) => {
+    setDone(false);
+    setSeconds(prev => prev + s);
+  };
+
+  // 시작/일시정지 토글
+  const toggleRun = () => {
+    if (seconds === 0) return;
+    setDone(false);
+    setRunning(r => !r);
+  };
+
+  // 리셋
+  const reset = () => {
+    setRunning(false);
+    setSeconds(0);
+    setDone(false);
+  };
+
+  // MM:SS 포맷
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+
+  // 타이머 상태에 따른 색상
+  const digitColor = done
+    ? COLOR.accentGreen
+    : running
+    ? COLOR.accentBrass
+    : COLOR.textDark;
+
+  return (
+    <>
+      {/* 타이머 완료 시 전체화면 알림 (소리 없음) */}
+      {done && (
+        <div style={styles.timerDoneOverlay} onClick={() => setDone(false)}>
+          <div style={styles.timerDoneBox}>
+            <div style={styles.timerDoneMark}>◆</div>
+            <div style={styles.timerDoneTitle}>휴식 완료</div>
+            <div style={styles.timerDoneSub}>REST COMPLETE</div>
+            <div style={styles.timerDoneTap}>화면을 탭하여 닫기</div>
+          </div>
+        </div>
+      )}
+
+      <div style={styles.timerBlock}>
+        {/* 헤더 */}
+        <div style={styles.timerHeader}>
+          <div style={styles.timerLabel}>REST TIMER</div>
+          <div style={styles.timerLabelKo}>쉬는시간 타이머</div>
+        </div>
+
+        {/* 카운트다운 표시 */}
+        <div style={styles.timerDisplay}>
+          <span style={{ ...styles.timerDigits, color: digitColor }}>
+            {mm}:{ss}
+          </span>
+        </div>
+
+        {/* 시간 추가 버튼 */}
+        <div style={styles.timerAddRow}>
+          <button style={styles.timerAddBtn} onClick={() => addTime(10)}>
+            +10초
+          </button>
+          <button style={styles.timerAddBtn} onClick={() => addTime(60)}>
+            +1분
+          </button>
+        </div>
+
+        {/* 시작/일시정지 + 리셋 */}
+        <div style={styles.timerControlRow}>
+          <button
+            style={{ ...styles.timerStartBtn, opacity: seconds === 0 ? 0.35 : 1 }}
+            onClick={toggleRun}
+            disabled={seconds === 0}
+          >
+            {running ? "일시정지" : "시작"}
+          </button>
+          <button style={styles.timerResetBtn} onClick={reset}>
+            리셋
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ====== 글로벌 CSS (애니메이션 등) ======
 const globalCSS = `
   /* 인풋 placeholder color */
   input::placeholder { color: #c9c0aa; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.45; }
+  }
 `;
 
 // ====== 색상 토큰 ======
@@ -2273,5 +2395,138 @@ const styles = {
     fontSize: "14px",
     fontWeight: 700,
     color: COLOR.brownMid,
+  },
+
+  // === REST TIMER ===
+  timerDoneOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15, 13, 10, 0.92)",
+    zIndex: 200,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    animation: "fadeUp 0.3s ease",
+    cursor: "pointer",
+  },
+  timerDoneBox: {
+    textAlign: "center",
+    color: COLOR.bgPaper,
+    padding: "48px 40px",
+  },
+  timerDoneMark: {
+    fontSize: "48px",
+    color: COLOR.accentBrass,
+    marginBottom: "20px",
+    animation: "pulse 1.5s ease-in-out infinite",
+  },
+  timerDoneTitle: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 800,
+    fontSize: "52px",
+    letterSpacing: "-0.04em",
+    color: COLOR.bgPaper,
+    marginBottom: "8px",
+    lineHeight: 1,
+  },
+  timerDoneSub: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "11px",
+    letterSpacing: "0.5em",
+    color: COLOR.accentBrass,
+    marginBottom: "36px",
+    paddingLeft: "0.5em",
+  },
+  timerDoneTap: {
+    fontSize: "11px",
+    letterSpacing: "0.1em",
+    color: COLOR.khakiLight,
+    fontWeight: 400,
+  },
+  timerBlock: {
+    margin: "0 20px 24px",
+    background: "rgba(255,255,255,0.3)",
+    border: `1px solid ${COLOR.line}`,
+    borderRadius: "2px",
+    padding: "18px",
+    position: "relative",
+  },
+  timerHeader: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "8px",
+    marginBottom: "16px",
+    paddingBottom: "10px",
+    borderBottom: `1px dashed ${COLOR.line}`,
+  },
+  timerLabel: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "10px",
+    letterSpacing: "0.3em",
+    fontWeight: 600,
+    color: COLOR.khakiDeep,
+  },
+  timerLabelKo: {
+    fontSize: "9px",
+    letterSpacing: "0.1em",
+    color: COLOR.textMute,
+    fontWeight: 500,
+  },
+  timerDisplay: {
+    textAlign: "center",
+    marginBottom: "16px",
+    lineHeight: 1,
+  },
+  timerDigits: {
+    fontFamily: "'Geist Mono', monospace",
+    fontWeight: 800,
+    fontSize: "56px",
+    letterSpacing: "-0.04em",
+    lineHeight: 1,
+    transition: "color 0.4s ease",
+  },
+  timerAddRow: {
+    display: "flex",
+    gap: "8px",
+    marginBottom: "10px",
+  },
+  timerAddBtn: {
+    flex: 1,
+    padding: "11px 0",
+    border: `1px solid ${COLOR.khakiMid}`,
+    borderRadius: "1px",
+    fontSize: "14px",
+    fontWeight: 700,
+    color: COLOR.khakiDeep,
+    background: "rgba(255,255,255,0.45)",
+    fontFamily: "'KakaoBigFont', sans-serif",
+    letterSpacing: "-0.01em",
+  },
+  timerControlRow: {
+    display: "flex",
+    gap: "8px",
+  },
+  timerStartBtn: {
+    flex: 1,
+    padding: "13px",
+    background: COLOR.bgDark,
+    color: COLOR.bgPaper,
+    borderRadius: "1px",
+    fontSize: "12px",
+    fontWeight: 700,
+    letterSpacing: "0.15em",
+    fontFamily: "'KakaoBigFont', sans-serif",
+    transition: "opacity 0.2s ease",
+  },
+  timerResetBtn: {
+    padding: "13px 18px",
+    border: `1px solid ${COLOR.line}`,
+    borderRadius: "1px",
+    fontSize: "12px",
+    fontWeight: 600,
+    color: COLOR.textMute,
+    letterSpacing: "0.1em",
+    background: "transparent",
+    fontFamily: "'KakaoBigFont', sans-serif",
   },
 };

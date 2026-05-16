@@ -289,6 +289,7 @@ export default function App() {
   const [showInstallHint, setShowInstallHint] = useState(false);
   // 사용자가 편집 가능한 프로그램 데이터 (localStorage에 영속 저장)
   const [program, setProgram] = useState(PROGRAM);
+  const [workoutComments, setWorkoutComments] = useState([]);
   // 네비게이션 전환 방향 상태
   const [navDir, setNavDir] = useState("forward"); // "forward" | "back"
 
@@ -306,10 +307,13 @@ export default function App() {
         const u = localStorage.getItem("unit_pref");
         if (u === "kg" || u === "lb") setUnit(u);
       } catch (e) {}
-      // 사용자 커스텀 프로그램 데이터 로드
       try {
         const p = localStorage.getItem("program_v1");
         if (p) setProgram(JSON.parse(p));
+      } catch (e) {}
+      try {
+        const c = localStorage.getItem("workout_comments_v1");
+        if (c) setWorkoutComments(JSON.parse(c));
       } catch (e) {}
       setLoading(false);
     }
@@ -345,10 +349,17 @@ export default function App() {
     try { localStorage.setItem("unit_pref", newUnit); } catch (e) {}
   };
 
-  // 프로그램(운동 종목) 수정 후 localStorage에 영속 저장
   const saveProgram = (newProgram) => {
     setProgram(newProgram);
     try { localStorage.setItem("program_v1", JSON.stringify(newProgram)); } catch (e) {}
+  };
+
+  // 운동 후 코멘트 저장
+  const saveWorkoutComment = (dayKey, comment) => {
+    const entry = { date: new Date().toISOString(), dayKey, dayName: program[dayKey]?.name ?? dayKey, comment };
+    const updated = [...workoutComments, entry];
+    setWorkoutComments(updated);
+    try { localStorage.setItem("workout_comments_v1", JSON.stringify(updated)); } catch (e) {}
   };
 
   const today = new Date();
@@ -410,6 +421,7 @@ export default function App() {
           weekDays={recentWeek.size}
           bodyStats={bodyStats}
           unit={unit}
+          workoutComments={workoutComments}
           onSelectDay={(d) => {
             setSelectedDay(d);
             navigateTo("workout", "forward");
@@ -427,6 +439,7 @@ export default function App() {
           onUpdateProgram={saveProgram}
           history={history}
           unit={unit}
+          onSaveComment={(comment) => saveWorkoutComment(selectedDay, comment)}
           onBack={() => navigateTo("home", "back")}
           onSelectExercise={(ex) => {
             setSelectedExercise(ex);
@@ -504,7 +517,7 @@ function UnitToggle({ unit, onChange }) {
 }
 
 // ====== 홈 화면 ======
-function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodyStats, unit, onSelectDay, onUpdateStats, viewAnimation }) {
+function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodyStats, unit, workoutComments, onSelectDay, onUpdateStats, viewAnimation }) {
   // 하단 탭 상태: "today" | "split" | "stats"
   const [homeTab, setHomeTab] = useState("today");
   const [editStats, setEditStats] = useState(false);
@@ -587,6 +600,40 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
                 <div style={kkStyles.statCardLabel}>총 볼륨</div>
               </div>
             </div>
+
+            {/* 주간 코멘트 분석 */}
+            {(() => {
+              const analysis = analyzeComments(workoutComments);
+              const lastWeek = workoutComments.filter(c => (Date.now() - new Date(c.date)) / 86400000 <= 7);
+              if (lastWeek.length === 0) return null;
+              const analysisColor = { warning: "#E53935", caution: "#F57C00", positive: COLOR.green, neutral: COLOR.textSub };
+              return (
+                <div style={kkStyles.weeklyCard}>
+                  <div style={kkStyles.weeklyCardHeader}>
+                    <div style={kkStyles.weeklyCardTitle}>지난 7일 분석</div>
+                    <div style={kkStyles.weeklyCardCount}>{lastWeek.length}개 기록</div>
+                  </div>
+                  {analysis && (
+                    <div style={{ ...kkStyles.analysisMsg, color: analysisColor[analysis.type] }}>
+                      {analysis.text}
+                    </div>
+                  )}
+                  <div style={kkStyles.weeklyCommentList}>
+                    {[...lastWeek].reverse().map((c, i) => (
+                      <div key={i} style={kkStyles.weeklyCommentItem}>
+                        <div style={kkStyles.weeklyCommentMeta}>
+                          <span style={kkStyles.weeklyCommentDay}>{c.dayName}</span>
+                          <span style={kkStyles.weeklyCommentDate}>
+                            {new Date(c.date).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                          </span>
+                        </div>
+                        <div style={kkStyles.weeklyCommentText}>{c.comment}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -688,21 +735,18 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
           style={{ ...kkStyles.tabBarBtn, ...(homeTab === "today" ? kkStyles.tabBarBtnActive : {}) }}
           onClick={() => setHomeTab("today")}
         >
-          <span style={kkStyles.tabBarIcon}>🏋️</span>
           <span style={kkStyles.tabBarLabel}>오늘</span>
         </button>
         <button
           style={{ ...kkStyles.tabBarBtn, ...(homeTab === "split" ? kkStyles.tabBarBtnActive : {}) }}
           onClick={() => setHomeTab("split")}
         >
-          <span style={kkStyles.tabBarIcon}>📋</span>
           <span style={kkStyles.tabBarLabel}>루틴</span>
         </button>
         <button
           style={{ ...kkStyles.tabBarBtn, ...(homeTab === "stats" ? kkStyles.tabBarBtnActive : {}) }}
           onClick={() => setHomeTab("stats")}
         >
-          <span style={kkStyles.tabBarIcon}>📊</span>
           <span style={kkStyles.tabBarLabel}>신체</span>
         </button>
       </div>
@@ -711,8 +755,9 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
 }
 
 // ====== 운동 일자 화면 ======
-function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onBack, onSelectExercise, viewAnimation }) {
-  const [editTarget, setEditTarget] = useState(null); // { groupIdx, exerciseIdx } | null
+function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onSaveComment, onBack, onSelectExercise, viewAnimation }) {
+  const [editTarget, setEditTarget] = useState(null);
+  const [showComment, setShowComment] = useState(false);
   const longPressTimer = useRef(null);
   const longPressActive = useRef(false);
 
@@ -863,6 +908,15 @@ function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onB
         ))}
       </div>
 
+      {/* 오늘 운동 마무리 버튼 (하나라도 완료했을 때) */}
+      {completedToday > 0 && (
+        <div style={{ padding: "0 16px 32px" }}>
+          <button style={kkStyles.finishBtn} onClick={() => setShowComment(true)}>
+            오늘 운동 마무리 · 코멘트 남기기
+          </button>
+        </div>
+      )}
+
       {/* 운동 편집/추가 시트 */}
       {editTarget && (
         <ExerciseEditSheet
@@ -877,6 +931,67 @@ function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onB
           onClose={() => setEditTarget(null)}
         />
       )}
+
+      {/* 코멘트 모달 */}
+      {showComment && (
+        <WorkoutCommentModal
+          dayName={day.name}
+          onSave={(comment) => { onSaveComment(comment); setShowComment(false); }}
+          onClose={() => setShowComment(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ====== 코멘트 분석 (지난 7일) ======
+function analyzeComments(comments) {
+  const lastWeek = comments.filter(c => {
+    const diff = (Date.now() - new Date(c.date)) / (1000 * 60 * 60 * 24);
+    return diff <= 7;
+  });
+  if (lastWeek.length === 0) return null;
+  const text = lastWeek.map(c => c.comment).join(" ");
+  const pain   = /아프|통증|불편|부상|쑤셔|뻐근/.test(text);
+  const tired  = /힘들|피곤|지쳐|무거|힘없|컨디션 안/.test(text);
+  const good   = /좋|최고|가볍|수월|활기|잘됐|상쾌|완벽/.test(text);
+  if (pain)          return { type: "warning",  text: "불편함이나 통증이 언급됐어요. 해당 부위 강도를 줄이고 충분히 회복하세요." };
+  if (tired && !good) return { type: "caution",  text: "피로가 쌓인 한 주였네요. 오늘은 무게를 5~10% 줄이고 회복에 집중해보세요." };
+  if (good && !tired) return { type: "positive", text: "컨디션이 좋은 한 주였어요! 오늘도 목표 무게에 도전해보세요." };
+  return { type: "neutral", text: "꾸준히 기록하고 있어요. 이번 주도 화이팅!" };
+}
+
+// ====== 운동 코멘트 모달 ======
+function WorkoutCommentModal({ dayName, onSave, onClose }) {
+  const [text, setText] = useState("");
+  return (
+    <div style={kkStyles.sheetOverlay} onClick={onClose}>
+      <div style={kkStyles.sheet} onClick={e => e.stopPropagation()}>
+        <div style={kkStyles.sheetHandleWrap}><div style={kkStyles.sheetHandle} /></div>
+        <div style={kkStyles.sheetHeader}>
+          <div style={kkStyles.sheetTitleBlock}>
+            <div style={kkStyles.sheetTitle}>{dayName} 마무리</div>
+            <div style={kkStyles.sheetTitleSub}>오늘 운동 어땠나요?</div>
+          </div>
+          <button style={kkStyles.sheetCloseBtn} onClick={onClose}>×</button>
+        </div>
+        <div style={kkStyles.sheetBody}>
+          <textarea
+            style={kkStyles.commentTextarea}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder={"예: 벤치 무게 늘렸는데 생각보다 수월했음\n어깨가 좀 뻐근했음"}
+            rows={5}
+          />
+          <button
+            style={{ ...kkStyles.sheetSaveBtn, opacity: text.trim() ? 1 : 0.35 }}
+            onClick={() => text.trim() && onSave(text.trim())}
+            disabled={!text.trim()}
+          >
+            저장하기
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2743,5 +2858,102 @@ const kkStyles = {
     background: "transparent",
     cursor: "pointer",
     fontFamily: "'KakaoBigFont', sans-serif",
+  },
+
+  // 운동 마무리 버튼
+  finishBtn: {
+    width: "100%",
+    padding: "16px",
+    background: COLOR.yellow,
+    color: COLOR.text,
+    borderRadius: "14px",
+    fontSize: "15px",
+    fontWeight: 700,
+    letterSpacing: "-0.01em",
+    boxShadow: COLOR.shadowYellow,
+    fontFamily: "'KakaoBigFont', sans-serif",
+  },
+
+  // 코멘트 textarea
+  commentTextarea: {
+    width: "100%",
+    padding: "14px",
+    border: `1.5px solid ${COLOR.line}`,
+    borderRadius: "12px",
+    fontSize: "15px",
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 400,
+    color: COLOR.text,
+    background: COLOR.bgSub,
+    outline: "none",
+    resize: "none",
+    lineHeight: 1.6,
+  },
+
+  // 주간 분석 카드
+  weeklyCard: {
+    background: COLOR.white,
+    borderRadius: "16px",
+    boxShadow: COLOR.shadow,
+    padding: "18px 16px",
+    marginTop: "4px",
+  },
+  weeklyCardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "10px",
+  },
+  weeklyCardTitle: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "15px",
+    color: COLOR.text,
+  },
+  weeklyCardCount: {
+    fontSize: "12px",
+    color: COLOR.textMute,
+    fontWeight: 500,
+  },
+  analysisMsg: {
+    fontSize: "13px",
+    fontWeight: 600,
+    lineHeight: 1.5,
+    padding: "10px 12px",
+    background: COLOR.bgSub,
+    borderRadius: "10px",
+    marginBottom: "12px",
+  },
+  weeklyCommentList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
+  weeklyCommentItem: {
+    borderTop: `1px solid ${COLOR.line}`,
+    paddingTop: "10px",
+  },
+  weeklyCommentMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: "4px",
+  },
+  weeklyCommentDay: {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: COLOR.yellow,
+    background: "rgba(254,229,0,0.15)",
+    padding: "2px 8px",
+    borderRadius: "100px",
+  },
+  weeklyCommentDate: {
+    fontSize: "11px",
+    color: COLOR.textMute,
+  },
+  weeklyCommentText: {
+    fontSize: "13px",
+    color: COLOR.textSub,
+    lineHeight: 1.5,
+    whiteSpace: "pre-wrap",
   },
 };

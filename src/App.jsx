@@ -229,6 +229,54 @@ function getProgressionSuggestion(history, exercise, unit = "kg") {
   };
 }
 
+// ====== 카카오 스타일 디자인 토큰 ======
+const COLOR = {
+  bg: "#FFFFFF",
+  bgSub: "#F7F8FA",
+  bgGray: "#F0F0F0",
+  yellow: "#FEE500",
+  yellowDeep: "#F0D800",
+  yellowSoft: "rgba(254,229,0,0.15)",
+  text: "#191919",
+  textSub: "#555555",
+  textMute: "#9E9E9E",
+  textLight: "#C4C4C4",
+  line: "#EBEBEB",
+  white: "#FFFFFF",
+  green: "#4CAF50",
+  red: "#E53935",
+  shadow: "0 2px 12px rgba(0,0,0,0.07)",
+  shadowMd: "0 4px 20px rgba(0,0,0,0.10)",
+  shadowYellow: "0 4px 16px rgba(254,229,0,0.45)",
+};
+
+// ====== 글로벌 CSS ======
+const globalCSS = `
+  @keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0.85; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
+  @keyframes slideInLeft {
+    from { transform: translateX(-40%); opacity: 0.7; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.45; }
+  }
+  input::placeholder { color: #C4C4C4; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+`;
+
 // ====== 메인 앱 ======
 export default function App() {
   const [view, setView] = useState("home");
@@ -241,6 +289,8 @@ export default function App() {
   const [showInstallHint, setShowInstallHint] = useState(false);
   // 사용자가 편집 가능한 프로그램 데이터 (localStorage에 영속 저장)
   const [program, setProgram] = useState(PROGRAM);
+  // 네비게이션 전환 방향 상태
+  const [navDir, setNavDir] = useState("forward"); // "forward" | "back"
 
   useEffect(() => {
     async function load() {
@@ -324,20 +374,31 @@ export default function App() {
     });
   });
 
+  // 화면 전환 헬퍼: 방향 설정 후 뷰 변경
+  const navigateTo = (nextView, dir = "forward") => {
+    setNavDir(dir);
+    setView(nextView);
+  };
+
+  // 뷰별 애니메이션 스타일
+  const getViewAnimation = () => {
+    if (navDir === "forward") return "slideInRight 0.28s cubic-bezier(0.25,0.46,0.45,0.94)";
+    return "slideInLeft 0.25s cubic-bezier(0.25,0.46,0.45,0.94)";
+  };
+
   if (loading) {
     return (
-      <div style={styles.loadingScreen}>
+      <div style={kkStyles.loadingScreen}>
         <style>{globalCSS}</style>
-        <div style={styles.loadingMark}>※</div>
-        <div style={styles.loadingText}>ATELIER</div>
+        <div style={kkStyles.loadingSpinner}>●</div>
+        <div style={kkStyles.loadingText}>ATELIER</div>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
+    <div style={kkStyles.appRoot}>
       <style>{globalCSS}</style>
-      <NoiseOverlay />
 
       {showInstallHint && <InstallHint onDismiss={dismissInstallHint} />}
 
@@ -348,8 +409,13 @@ export default function App() {
           totalVolume={totalVolume}
           weekDays={recentWeek.size}
           bodyStats={bodyStats}
-          onSelectDay={(d) => { setSelectedDay(d); setView("workout"); }}
+          unit={unit}
+          onSelectDay={(d) => {
+            setSelectedDay(d);
+            navigateTo("workout", "forward");
+          }}
           onUpdateStats={saveBodyStats}
+          viewAnimation={getViewAnimation()}
         />
       )}
 
@@ -361,8 +427,12 @@ export default function App() {
           onUpdateProgram={saveProgram}
           history={history}
           unit={unit}
-          onBack={() => setView("home")}
-          onSelectExercise={(ex) => { setSelectedExercise(ex); setView("exercise"); }}
+          onBack={() => navigateTo("home", "back")}
+          onSelectExercise={(ex) => {
+            setSelectedExercise(ex);
+            navigateTo("exercise", "forward");
+          }}
+          viewAnimation={getViewAnimation()}
         />
       )}
 
@@ -374,84 +444,70 @@ export default function App() {
           history={history[selectedExercise.id] || []}
           unit={unit}
           onUpdateUnit={saveUnit}
-          onBack={() => setView("workout")}
+          onBack={() => navigateTo("workout", "back")}
           onSave={(session) => {
             const newHistory = { ...history };
             if (!newHistory[selectedExercise.id]) newHistory[selectedExercise.id] = [];
             newHistory[selectedExercise.id] = [...newHistory[selectedExercise.id], session];
             saveHistory(newHistory);
-            setView("workout");
+            navigateTo("workout", "back");
           }}
           onDelete={(idx) => {
             const newHistory = { ...history };
             newHistory[selectedExercise.id] = newHistory[selectedExercise.id].filter((_, i) => i !== idx);
             saveHistory(newHistory);
           }}
+          viewAnimation={getViewAnimation()}
         />
       )}
     </div>
   );
 }
 
-// ====== 노이즈 오버레이 (필름 그레인 효과) ======
-function NoiseOverlay() {
-  return (
-    <svg style={styles.noise} xmlns="http://www.w3.org/2000/svg">
-      <filter id="noiseFilter">
-        <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch" />
-        <feColorMatrix values="0 0 0 0 0.15  0 0 0 0 0.13  0 0 0 0 0.10  0 0 0 0.4 0" />
-      </filter>
-      <rect width="100%" height="100%" filter="url(#noiseFilter)" />
-    </svg>
-  );
-}
-
 // ====== iOS 홈화면 추가 안내 ======
 function InstallHint({ onDismiss }) {
   return (
-    <div style={styles.installHint}>
-      <div style={styles.installHintInner}>
-        <div style={styles.installHintHeader}>
-          <span style={styles.installHintTitle}>홈화면에 추가하기</span>
-          <button style={styles.installHintClose} onClick={onDismiss}>×</button>
+    <div style={kkStyles.installHint}>
+      <div style={kkStyles.installHintInner}>
+        <div style={kkStyles.installHintHeader}>
+          <span style={kkStyles.installHintTitle}>홈화면에 추가하기</span>
+          <button style={kkStyles.installHintClose} onClick={onDismiss}>×</button>
         </div>
-        <div style={styles.installHintBody}>
+        <div style={kkStyles.installHintBody}>
           정식 앱처럼 사용하려면 사파리 하단의{" "}
-          <span style={styles.installHintIcon}>⬆︎</span>{" "}
-          공유 버튼을 눌러서 <strong style={styles.installHintBold}>'홈 화면에 추가'</strong>를 선택하세요.
+          <span style={{ color: COLOR.yellow, fontWeight: 700 }}>⬆︎</span>{" "}
+          공유 버튼을 눌러서 <strong style={{ color: COLOR.text }}>홈 화면에 추가</strong>를 선택하세요.
         </div>
       </div>
     </div>
   );
 }
 
-// ====== 장식용 코너 마크 ======
-function CornerMarks({ color = "#5a5240" }) {
-  const size = 8;
-  const stroke = 1;
-  const corner = (pos) => ({
-    position: "absolute",
-    width: size,
-    height: size,
-    borderColor: color,
-    borderStyle: "solid",
-    pointerEvents: "none",
-    ...pos,
-  });
+// ====== 단위 토글 버튼 ======
+function UnitToggle({ unit, onChange }) {
   return (
-    <>
-      <div style={{ ...corner({ top: 6, left: 6 }), borderWidth: `${stroke}px 0 0 ${stroke}px` }} />
-      <div style={{ ...corner({ top: 6, right: 6 }), borderWidth: `${stroke}px ${stroke}px 0 0` }} />
-      <div style={{ ...corner({ bottom: 6, left: 6 }), borderWidth: `0 0 ${stroke}px ${stroke}px` }} />
-      <div style={{ ...corner({ bottom: 6, right: 6 }), borderWidth: `0 ${stroke}px ${stroke}px 0` }} />
-    </>
+    <div style={kkStyles.unitToggle}>
+      <button
+        style={{ ...kkStyles.unitToggleBtn, ...(unit === "kg" ? kkStyles.unitToggleBtnActive : {}) }}
+        onClick={() => onChange("kg")}
+      >
+        KG
+      </button>
+      <button
+        style={{ ...kkStyles.unitToggleBtn, ...(unit === "lb" ? kkStyles.unitToggleBtnActive : {}) }}
+        onClick={() => onChange("lb")}
+      >
+        LB
+      </button>
+    </div>
   );
 }
 
 // ====== 홈 화면 ======
-function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodyStats, unit, onSelectDay, onUpdateStats }) {
+function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodyStats, unit, onSelectDay, onUpdateStats, viewAnimation }) {
+  // 하단 탭 상태: "today" | "split" | "stats"
+  const [homeTab, setHomeTab] = useState("today");
   const [editStats, setEditStats] = useState(false);
-  // 신체 기록은 kg 고정 (메인 화면이 깔끔하도록)
   const [tempWeight, setTempWeight] = useState(bodyStats.weight || "");
   const [tempHeight, setTempHeight] = useState(bodyStats.height || "");
 
@@ -464,13 +520,10 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
   }, [editStats, bodyStats]);
 
   const today = new Date();
-  const dateStr = today.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }).toUpperCase();
+  const dateStr = today.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
 
   const handleSaveStats = () => {
-    onUpdateStats({
-      weight: tempWeight,
-      height: tempHeight,
-    });
+    onUpdateStats({ weight: tempWeight, height: tempHeight });
     setEditStats(false);
   };
 
@@ -480,212 +533,186 @@ function HomeView({ recommendedDay, totalSessions, totalVolume, weekDays, bodySt
     : "—";
 
   return (
-    <div style={styles.home}>
-      {/* === 매거진 헤더 === */}
-      <div style={styles.magazineHeader}>
-        <div style={styles.headerTopRow}>
-          <div style={styles.dateLabel}>{dateStr}</div>
-          <div style={styles.issueLabel}>VOL · 01</div>
+    <div style={{ ...kkStyles.pageContainer, animation: viewAnimation }}>
+      {/* 상단 헤더 */}
+      <div style={kkStyles.kkHeader}>
+        <div style={kkStyles.kkHeaderLeft}>
+          <div style={kkStyles.kkLogo}>아틀리에</div>
+          <div style={kkStyles.kkLogoSub}>ATELIER</div>
         </div>
-        <div style={styles.divider} />
-        <div style={styles.titleBlock}>
-          <div style={styles.titleSerif}>아틀리에</div>
-          <div style={styles.titleEn}>ATELIER</div>
-          <div style={styles.titleSub}>STRENGTH JOURNAL</div>
-        </div>
-        <div style={styles.divider} />
-        <div style={styles.headerBottomRow}>
-          <div style={styles.tagline}>EST · MMXXVI</div>
-          <div style={styles.tagline}>ACSM 2026 · 12 SETS</div>
-        </div>
+        <div style={kkStyles.kkHeaderDate}>{dateStr}</div>
       </div>
 
-      {/* === 신체 기록 === */}
-      <section style={styles.section}>
-        <SectionHeader number="01" title="Vital Statistics" titleKo="신체 기록" />
-        <div style={styles.statsCard}>
-          <CornerMarks />
-          <div style={styles.statsCardInner}>
-            <div style={styles.statsTopRow}>
-              <div style={styles.statsLabel}>BODY · METRICS</div>
-              <button style={styles.editBtn} onClick={() => setEditStats(!editStats)}>
-                {editStats ? "CANCEL" : "EDIT"}
-              </button>
-            </div>
-            {editStats ? (
-              <div style={styles.statsEditWrap}>
-                <div style={styles.statsInputRow}>
-                  <div style={styles.statsInputWrap}>
-                    <label style={styles.statsInputLabel}>WEIGHT · kg</label>
-                    <input
-                      type="number"
-                      value={tempWeight}
-                      onChange={(e) => setTempWeight(e.target.value)}
-                      style={styles.statsInput}
-                      placeholder="—"
-                    />
-                  </div>
-                  <div style={styles.statsInputWrap}>
-                    <label style={styles.statsInputLabel}>HEIGHT · cm</label>
-                    <input
-                      type="number"
-                      value={tempHeight}
-                      onChange={(e) => setTempHeight(e.target.value)}
-                      style={styles.statsInput}
-                      placeholder="—"
-                    />
-                  </div>
-                </div>
-                <button style={styles.saveStatsBtn} onClick={handleSaveStats}>
-                  CONFIRM
-                </button>
+      {/* 탭 콘텐츠 영역 */}
+      <div style={kkStyles.tabContent}>
+
+        {/* ===== 오늘 탭 ===== */}
+        {homeTab === "today" && (
+          <div style={{ animation: "fadeIn 0.22s ease" }}>
+            {/* 오늘의 추천 운동 히어로 카드 */}
+            {recommendedDay ? (
+              <div
+                style={kkStyles.todayHeroCard}
+                onClick={() => onSelectDay(recommendedDay)}
+              >
+                <div style={kkStyles.todayHeroBadge}>오늘의 운동</div>
+                <div style={kkStyles.todayHeroName}>{PROGRAM[recommendedDay].name}</div>
+                <div style={kkStyles.todayHeroSub}>{PROGRAM[recommendedDay].subtitleKo}</div>
+                <div style={kkStyles.todayHeroCta}>시작하기 →</div>
               </div>
             ) : (
-              <div style={styles.statsGrid}>
-                <StatCell label="MASS" value={bodyStats.weight || "—"} unit="kg" />
-                <div style={styles.vDivider} />
-                <StatCell label="STATURE" value={bodyStats.height || "—"} unit="cm" />
-                <div style={styles.vDivider} />
-                <StatCell label="INDEX" value={bmi} unit="bmi" />
+              /* 오늘 추천 운동 없을 때 */
+              <div style={kkStyles.restDayCard}>
+                <div style={kkStyles.restDayEmoji}>🌙</div>
+                <div style={kkStyles.restDayTitle}>오늘은 쉬는 날이에요</div>
+                <div style={kkStyles.restDaySub}>월·수·금에 운동을 기록하세요</div>
               </div>
             )}
-          </div>
-        </div>
-      </section>
 
-      {/* === 통계 === */}
-      <section style={styles.section}>
-        <SectionHeader number="02" title="Summary" titleKo="기록 요약" />
-        <div style={styles.summaryGrid}>
-          <SummaryCard label="WEEK" value={weekDays} suffix="/ 7" />
-          <SummaryCard label="SESSIONS" value={totalSessions} suffix="total" />
-          <SummaryCard label="VOLUME" value={(totalVolume / 1000).toFixed(1)} suffix="ton" />
-        </div>
-      </section>
-
-      {/* === 오늘의 추천 === */}
-      {recommendedDay && (
-        <section style={styles.section}>
-          <SectionHeader number="03" title="Today's Programme" titleKo="오늘의 프로그램" />
-          <div style={styles.todayCard} onClick={() => onSelectDay(recommendedDay)}>
-            <div style={styles.todayInner}>
-              <div style={styles.todayChapter}>CH. {PROGRAM[recommendedDay].chapter}</div>
-              <div style={styles.todayName}>{PROGRAM[recommendedDay].name}</div>
-              <div style={styles.todayItalic}>{PROGRAM[recommendedDay].subtitle}</div>
-              <div style={styles.todayDivider} />
-              <div style={styles.todayMeta}>
-                <span>{PROGRAM[recommendedDay].dayKo}</span>
-                <span>·</span>
-                <span>3 GROUPS</span>
-                <span>·</span>
-                <span>12 SETS EACH</span>
+            {/* 요약 통계 카드 3개 */}
+            <div style={kkStyles.statCardRow}>
+              <div style={kkStyles.statCard}>
+                <div style={kkStyles.statCardValue}>{weekDays}</div>
+                <div style={kkStyles.statCardUnit}>/ 7일</div>
+                <div style={kkStyles.statCardLabel}>이번 주</div>
               </div>
-              <div style={styles.todayCta}>
-                <span>ENTER PROGRAMME</span>
-                <ChevronRight size={14} />
+              <div style={kkStyles.statCard}>
+                <div style={kkStyles.statCardValue}>{totalSessions}</div>
+                <div style={kkStyles.statCardUnit}>회</div>
+                <div style={kkStyles.statCardLabel}>총 세션</div>
+              </div>
+              <div style={kkStyles.statCard}>
+                <div style={kkStyles.statCardValue}>{(totalVolume / 1000).toFixed(1)}</div>
+                <div style={kkStyles.statCardUnit}>ton</div>
+                <div style={kkStyles.statCardLabel}>총 볼륨</div>
               </div>
             </div>
           </div>
-        </section>
-      )}
+        )}
 
-      {/* === 분할 목록 === */}
-      <section style={styles.section}>
-        <SectionHeader number={recommendedDay ? "04" : "03"} title="Three-Day Split" titleKo="3일 분할" />
-        <div style={styles.splitList}>
-          {Object.entries(PROGRAM).map(([key, day], idx) => (
-            <div key={key} style={styles.splitRow} onClick={() => onSelectDay(key)}>
-              <div style={styles.splitChapter}>{day.chapter}</div>
-              <div style={styles.splitMain}>
-                <div style={styles.splitDay}>{day.day}</div>
-                <div style={styles.splitContent}>
-                  <div style={styles.splitName}>{day.name}</div>
-                  <div style={styles.splitSubtitle}>{day.subtitleKo}</div>
+        {/* ===== 루틴 탭 ===== */}
+        {homeTab === "split" && (
+          <div style={{ animation: "fadeIn 0.22s ease" }}>
+            <div style={kkStyles.sectionTitle}>3일 분할 루틴</div>
+            {Object.entries(PROGRAM).map(([key, day]) => (
+              <div key={key} style={kkStyles.splitCard} onClick={() => onSelectDay(key)}>
+                <div style={kkStyles.splitCardLeft}>
+                  <div style={kkStyles.splitCardChapter}>{day.chapter}</div>
+                  <div style={kkStyles.splitCardName}>{day.name}</div>
+                  <div style={kkStyles.splitCardSub}>{day.subtitleKo}</div>
                 </div>
+                <div style={kkStyles.splitCardDay}>{day.day}</div>
+                <ChevronRight size={18} color={COLOR.textLight} />
               </div>
-              <div style={styles.splitArrow}>
-                <ChevronRight size={16} />
+            ))}
+          </div>
+        )}
+
+        {/* ===== 신체 탭 ===== */}
+        {homeTab === "stats" && (
+          <div style={{ animation: "fadeIn 0.22s ease" }}>
+            <div style={kkStyles.sectionTitle}>신체 기록</div>
+            <div style={kkStyles.bodyCard}>
+              {/* 헤더 */}
+              <div style={kkStyles.bodyCardHeader}>
+                <div style={kkStyles.bodyCardTitle}>내 신체 정보</div>
+                <button
+                  style={kkStyles.bodyEditBtn}
+                  onClick={() => setEditStats(!editStats)}
+                >
+                  {editStats ? "취소" : "편집"}
+                </button>
               </div>
+
+              {editStats ? (
+                /* 편집 모드 */
+                <div style={kkStyles.bodyEditSection}>
+                  <div style={kkStyles.bodyInputRow}>
+                    <div style={kkStyles.bodyInputWrap}>
+                      <label style={kkStyles.bodyInputLabel}>체중 (kg)</label>
+                      <input
+                        type="number"
+                        value={tempWeight}
+                        onChange={(e) => setTempWeight(e.target.value)}
+                        style={kkStyles.bodyInput}
+                        placeholder="예: 70"
+                        inputMode="decimal"
+                      />
+                    </div>
+                    <div style={kkStyles.bodyInputWrap}>
+                      <label style={kkStyles.bodyInputLabel}>키 (cm)</label>
+                      <input
+                        type="number"
+                        value={tempHeight}
+                        onChange={(e) => setTempHeight(e.target.value)}
+                        style={kkStyles.bodyInput}
+                        placeholder="예: 175"
+                        inputMode="decimal"
+                      />
+                    </div>
+                  </div>
+                  <button style={kkStyles.bodySaveBtn} onClick={handleSaveStats}>
+                    저장하기
+                  </button>
+                </div>
+              ) : (
+                /* 표시 모드 */
+                <div style={kkStyles.bodyStatGrid}>
+                  <div style={kkStyles.bodyStatCell}>
+                    <div style={kkStyles.bodyStatValue}>{bodyStats.weight || "—"}</div>
+                    <div style={kkStyles.bodyStatUnit}>kg</div>
+                    <div style={kkStyles.bodyStatLabel}>체중</div>
+                  </div>
+                  <div style={kkStyles.bodyStatDivider} />
+                  <div style={kkStyles.bodyStatCell}>
+                    <div style={kkStyles.bodyStatValue}>{bodyStats.height || "—"}</div>
+                    <div style={kkStyles.bodyStatUnit}>cm</div>
+                    <div style={kkStyles.bodyStatLabel}>키</div>
+                  </div>
+                  <div style={kkStyles.bodyStatDivider} />
+                  <div style={kkStyles.bodyStatCell}>
+                    <div style={kkStyles.bodyStatValue}>{bmi}</div>
+                    <div style={kkStyles.bodyStatUnit}>BMI</div>
+                    <div style={kkStyles.bodyStatLabel}>체질량지수</div>
+                  </div>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      </section>
-
-      {/* === 푸터 === */}
-      <div style={styles.footer}>
-        <div style={styles.footerOrnament}>※ ✦ ※</div>
-        <div style={styles.footerText}>BASED ON ACSM 2026 POSITION STAND</div>
-        <div style={styles.footerSub}>For the dedicated practitioner</div>
+          </div>
+        )}
       </div>
-    </div>
-  );
-}
 
-// ====== 보조 컴포넌트 ======
-function UnitToggle({ unit, onChange }) {
-  return (
-    <div style={styles.unitToggle}>
-      <button
-        style={{
-          ...styles.unitToggleBtn,
-          ...(unit === "kg" ? styles.unitToggleBtnActive : {}),
-        }}
-        onClick={() => onChange("kg")}
-      >
-        KG
-      </button>
-      <button
-        style={{
-          ...styles.unitToggleBtn,
-          ...(unit === "lb" ? styles.unitToggleBtnActive : {}),
-        }}
-        onClick={() => onChange("lb")}
-      >
-        LB
-      </button>
-    </div>
-  );
-}
-
-function SectionHeader({ number, title, titleKo }) {
-  return (
-    <div style={styles.sectionHeader}>
-      <div style={styles.sectionNumber}>{number}</div>
-      <div style={styles.sectionTitleWrap}>
-        <div style={styles.sectionTitle}>{titleKo}</div>
-        <div style={styles.sectionTitleKo}>{title}</div>
-      </div>
-      <div style={styles.sectionLine} />
-    </div>
-  );
-}
-
-function StatCell({ label, value, unit }) {
-  return (
-    <div style={styles.statCell}>
-      <div style={styles.statCellLabel}>{label}</div>
-      <div style={styles.statCellValue}>{value}</div>
-      <div style={styles.statCellUnit}>{unit}</div>
-    </div>
-  );
-}
-
-function SummaryCard({ label, value, suffix }) {
-  return (
-    <div style={styles.summaryCard}>
-      <CornerMarks color="#8b7d65" />
-      <div style={styles.summaryInner}>
-        <div style={styles.summaryLabel}>{label}</div>
-        <div style={styles.summaryValue}>{value}</div>
-        <div style={styles.summarySuffix}>{suffix}</div>
+      {/* 하단 고정 탭바 */}
+      <div style={kkStyles.tabBar}>
+        <button
+          style={{ ...kkStyles.tabBarBtn, ...(homeTab === "today" ? kkStyles.tabBarBtnActive : {}) }}
+          onClick={() => setHomeTab("today")}
+        >
+          <span style={kkStyles.tabBarIcon}>🏋️</span>
+          <span style={kkStyles.tabBarLabel}>오늘</span>
+        </button>
+        <button
+          style={{ ...kkStyles.tabBarBtn, ...(homeTab === "split" ? kkStyles.tabBarBtnActive : {}) }}
+          onClick={() => setHomeTab("split")}
+        >
+          <span style={kkStyles.tabBarIcon}>📋</span>
+          <span style={kkStyles.tabBarLabel}>루틴</span>
+        </button>
+        <button
+          style={{ ...kkStyles.tabBarBtn, ...(homeTab === "stats" ? kkStyles.tabBarBtnActive : {}) }}
+          onClick={() => setHomeTab("stats")}
+        >
+          <span style={kkStyles.tabBarIcon}>📊</span>
+          <span style={kkStyles.tabBarLabel}>신체</span>
+        </button>
       </div>
     </div>
   );
 }
 
 // ====== 운동 일자 화면 ======
-function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onBack, onSelectExercise }) {
-  const [editTarget, setEditTarget] = useState(null); // { groupIdx, exerciseIdx } | null (null = 추가)
+function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onBack, onSelectExercise, viewAnimation }) {
+  const [editTarget, setEditTarget] = useState(null); // { groupIdx, exerciseIdx } | null
   const longPressTimer = useRef(null);
   const longPressActive = useRef(false);
 
@@ -699,6 +726,8 @@ function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onB
     }).length;
   }, 0);
 
+  const progressPct = totalExercises > 0 ? (completedToday / totalExercises) * 100 : 0;
+
   // 롱프레스 시작 (500ms)
   const startLongPress = (groupIdx, exerciseIdx) => {
     longPressActive.current = false;
@@ -708,7 +737,7 @@ function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onB
     }, 500);
   };
 
-  // 롱프레스 취소 (손가락 뗌 / 이동)
+  // 롱프레스 취소
   const cancelLongPress = () => {
     clearTimeout(longPressTimer.current);
   };
@@ -734,41 +763,38 @@ function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onB
   };
 
   return (
-    <div style={styles.workoutPage}>
-      {/* 매거진식 챕터 헤더 */}
-      <div style={styles.dayHeader}>
-        <button style={styles.backBtn} onClick={onBack}>
-          <ChevronLeft size={18} />
-          <span style={styles.backLabel}>BACK</span>
+    <div style={{ ...kkStyles.workoutPage, animation: viewAnimation }}>
+      {/* 상단 헤더 */}
+      <div style={kkStyles.kkWorkoutHeader}>
+        <button style={kkStyles.kkBackBtn} onClick={onBack}>
+          <ChevronLeft size={22} color={COLOR.text} />
         </button>
-        <div style={styles.dayHeaderInner}>
-          <div style={styles.chapterMark}>CHAPTER {day.chapter}</div>
-          <div style={styles.dayDivider} />
-          <div style={styles.dayHeroName}>{day.name}</div>
-          <div style={styles.dayHeroSub}>{day.subtitle}</div>
-          <div style={styles.dayDivider} />
-          <div style={styles.dayProgressRow}>
-            <div style={styles.dayProgressLabel}>SESSION PROGRESS</div>
-            <div style={styles.dayProgressBar}>
-              <div style={{ ...styles.dayProgressFill, width: `${(completedToday / Math.max(totalExercises, 1)) * 100}%` }} />
-            </div>
-            <div style={styles.dayProgressText}>{completedToday}/{totalExercises}</div>
-          </div>
-        </div>
+        <div style={kkStyles.kkWorkoutTitle}>{day.name}</div>
+        <div style={{ width: 40 }} />
       </div>
 
-      <div style={styles.exerciseList}>
+      {/* 진행률 바 */}
+      <div style={kkStyles.progressBarTrack}>
+        <div style={{ ...kkStyles.progressBarFill, width: `${progressPct}%` }} />
+      </div>
+
+      {/* 운동 목록 */}
+      <div style={kkStyles.workoutContent}>
+        {/* 운동 이름 서브헤더 */}
+        <div style={kkStyles.workoutSubHeader}>
+          <div style={kkStyles.workoutSubTitle}>{day.subtitleKo}</div>
+          <div style={kkStyles.workoutProgress}>{completedToday}/{totalExercises} 완료</div>
+        </div>
+
         {day.groups.map((group, gi) => (
-          <div key={gi} style={styles.muscleGroup}>
-            <div style={styles.muscleGroupHeader}>
-              <div style={styles.muscleNumber}>{String(gi + 1).padStart(2, "0")}</div>
-              <div style={styles.muscleNameWrap}>
-                <div style={styles.muscleName}>{group.muscle}</div>
-                <div style={styles.muscleNameKo}>{group.muscleKo}</div>
-              </div>
-              <div style={styles.muscleSetsBadge}>{group.exercises.length * 4} SETS</div>
+          <div key={gi} style={kkStyles.kkMuscleSection}>
+            {/* 근육 그룹 헤더 */}
+            <div style={kkStyles.kkMuscleSectionHeader}>
+              <div style={kkStyles.kkMuscleSectionTitle}>{group.muscleKo}</div>
+              <div style={kkStyles.kkMuscleSectionSub}>{group.muscle}</div>
             </div>
 
+            {/* 운동 카드 목록 */}
             {group.exercises.map((ex, ei) => {
               const sessions = history[ex.id] || [];
               const last = sessions[sessions.length - 1];
@@ -778,7 +804,10 @@ function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onB
               return (
                 <div
                   key={ex.id}
-                  style={{ ...styles.exerciseCard, opacity: isToday ? 0.55 : 1 }}
+                  style={{
+                    ...kkStyles.kkExCard,
+                    ...(isToday ? kkStyles.kkExCardDone : {}),
+                  }}
                   onTouchStart={() => startLongPress(gi, ei)}
                   onTouchEnd={cancelLongPress}
                   onTouchMove={cancelLongPress}
@@ -790,43 +819,45 @@ function WorkoutView({ dayKey, day, program, onUpdateProgram, history, unit, onB
                     onSelectExercise(ex);
                   }}
                 >
-                  <div style={styles.exerciseCardLeft}>
-                    <div style={styles.exerciseIndex}>{String(ei + 1).padStart(2, "0")}</div>
+                  {/* 왼쪽: 번호 */}
+                  <div style={kkStyles.kkExCardLeft}>
+                    <div style={kkStyles.kkExCardIdx}>{ei + 1}</div>
                   </div>
-                  <div style={styles.exerciseCardMain}>
-                    <div style={styles.exerciseTopRow}>
-                      <div style={styles.exerciseName}>
-                        {ex.nameKo}
-                        {isToday && <Check size={12} style={{ marginLeft: 6, color: "#6b7d4f" }} />}
-                      </div>
+
+                  {/* 중앙: 운동 정보 */}
+                  <div style={kkStyles.kkExCardMain}>
+                    <div style={kkStyles.kkExCardName}>{ex.nameKo}</div>
+                    <div style={kkStyles.kkExCardNameEn}>{ex.name}</div>
+                    <div style={kkStyles.kkExCardPills}>
+                      <span style={kkStyles.kkPill}>{ex.sets}×{ex.reps}</span>
+                      <span style={kkStyles.kkPill}>RPE {ex.rpe}</span>
+                      <span style={kkStyles.kkPill}>{ex.rest}</span>
                     </div>
-                    <div style={styles.exerciseNameEn}>{ex.name}</div>
-                    <div style={styles.exerciseMetaRow}>
-                      <span style={styles.metaPill}>{ex.sets}×{ex.reps}</span>
-                      <span style={styles.metaPill}>RPE {ex.rpe}</span>
-                      <span style={styles.metaPill}>{ex.rest}</span>
-                    </div>
-                    {suggestion.suggestedWeight !== null && (
-                      <div style={styles.exerciseSuggestion}>
-                        <TrendingUp size={11} />
+                    {/* 점진적 과부하 제안 표시 */}
+                    {suggestion.suggestedWeight !== null && !isToday && (
+                      <div style={kkStyles.kkExCardSuggestion}>
+                        <TrendingUp size={11} color={COLOR.yellow} />
                         <span>NEXT · {suggestion.suggestedWeightDisplay}{unitLabel(unit)}</span>
-                        {suggestion.type === "increase" && <span style={styles.suggestionUp}>↑</span>}
+                        {suggestion.type === "increase" && <span style={{ color: COLOR.green }}>↑</span>}
                       </div>
                     )}
                   </div>
-                  <div style={styles.exerciseCardRight}>
-                    <ChevronRight size={14} color="#8b7d65" />
-                  </div>
+
+                  {/* 오른쪽: 완료/이동 아이콘 */}
+                  {isToday
+                    ? <Check size={18} color={COLOR.green} />
+                    : <ChevronRight size={18} color={COLOR.textLight} />
+                  }
                 </div>
               );
             })}
 
             {/* 운동 추가 버튼 */}
             <button
-              style={styles.addExerciseBtn}
+              style={kkStyles.kkAddExBtn}
               onClick={() => setEditTarget({ groupIdx: gi, exerciseIdx: null })}
             >
-              <span style={styles.addExerciseBtnLabel}>+ 운동 추가</span>
+              + 운동 추가
             </button>
           </div>
         ))}
@@ -876,56 +907,55 @@ function ExerciseEditSheet({ exercise, isNew, onSave, onDelete, onClose }) {
   };
 
   return (
-    <div style={styles.sheetOverlay} onClick={onClose}>
-      <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+    <div style={kkStyles.sheetOverlay} onClick={onClose}>
+      <div style={kkStyles.sheet} onClick={(e) => e.stopPropagation()}>
         {/* 드래그 핸들 */}
-        <div style={styles.sheetHandleWrap}>
-          <div style={styles.sheetHandle} />
+        <div style={kkStyles.sheetHandleWrap}>
+          <div style={kkStyles.sheetHandle} />
         </div>
 
         {/* 헤더 */}
-        <div style={styles.sheetHeader}>
-          <div style={styles.sheetTitleBlock}>
-            <div style={styles.sheetTitle}>{isNew ? "운동 추가" : "운동 편집"}</div>
-            <div style={styles.sheetTitleSub}>{isNew ? "ADD EXERCISE" : "EDIT EXERCISE"}</div>
+        <div style={kkStyles.sheetHeader}>
+          <div style={kkStyles.sheetTitleBlock}>
+            <div style={kkStyles.sheetTitle}>{isNew ? "운동 추가" : "운동 편집"}</div>
           </div>
-          <button style={styles.sheetCloseBtn} onClick={onClose}>×</button>
+          <button style={kkStyles.sheetCloseBtn} onClick={onClose}>×</button>
         </div>
 
-        <div style={styles.sheetBody}>
+        <div style={kkStyles.sheetBody}>
           {/* 종류 토글 */}
-          <div style={styles.sheetFieldGroup}>
-            <div style={styles.sheetFieldLabel}>종류 · TYPE</div>
-            <div style={styles.typeToggle}>
+          <div style={kkStyles.sheetFieldGroup}>
+            <div style={kkStyles.sheetFieldLabel}>종류</div>
+            <div style={kkStyles.kkTypeToggle}>
               <button
-                style={{ ...styles.typeToggleBtn, ...(type === "compound" ? styles.typeToggleBtnActive : {}) }}
+                style={{ ...kkStyles.kkTypeToggleBtn, ...(type === "compound" ? kkStyles.kkTypeToggleBtnActive : {}) }}
                 onClick={() => setType("compound")}
               >
-                ◆ COMPOUND
+                컴파운드
               </button>
               <button
-                style={{ ...styles.typeToggleBtn, ...(type === "isolation" ? styles.typeToggleBtnActive : {}) }}
+                style={{ ...kkStyles.kkTypeToggleBtn, ...(type === "isolation" ? kkStyles.kkTypeToggleBtnActive : {}) }}
                 onClick={() => setType("isolation")}
               >
-                ◇ ISOLATION
+                아이솔레이션
               </button>
             </div>
           </div>
 
           {/* 운동명 */}
-          <div style={styles.sheetFieldGroup}>
-            <label style={styles.sheetFieldLabel}>운동명 (한글) *</label>
+          <div style={kkStyles.sheetFieldGroup}>
+            <label style={kkStyles.sheetFieldLabel}>운동명 (한글) *</label>
             <input
-              style={styles.sheetInput}
+              style={kkStyles.sheetInput}
               value={nameKo}
               onChange={(e) => setNameKo(e.target.value)}
               placeholder="예: 바벨 벤치프레스"
             />
           </div>
-          <div style={styles.sheetFieldGroup}>
-            <label style={styles.sheetFieldLabel}>Exercise Name</label>
+          <div style={kkStyles.sheetFieldGroup}>
+            <label style={kkStyles.sheetFieldLabel}>Exercise Name</label>
             <input
-              style={styles.sheetInput}
+              style={kkStyles.sheetInput}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Barbell Bench Press"
@@ -933,11 +963,11 @@ function ExerciseEditSheet({ exercise, isNew, onSave, onDelete, onClose }) {
           </div>
 
           {/* 수치 정보 4열 */}
-          <div style={styles.sheetGrid}>
-            <div style={styles.sheetGridItem}>
-              <label style={styles.sheetFieldLabel}>세트</label>
+          <div style={kkStyles.sheetGrid}>
+            <div style={kkStyles.sheetGridItem}>
+              <label style={kkStyles.sheetFieldLabel}>세트</label>
               <input
-                style={styles.sheetInputSm}
+                style={kkStyles.sheetInputSm}
                 type="number"
                 value={sets}
                 onChange={(e) => setSets(e.target.value)}
@@ -945,28 +975,28 @@ function ExerciseEditSheet({ exercise, isNew, onSave, onDelete, onClose }) {
                 placeholder="4"
               />
             </div>
-            <div style={styles.sheetGridItem}>
-              <label style={styles.sheetFieldLabel}>횟수</label>
+            <div style={kkStyles.sheetGridItem}>
+              <label style={kkStyles.sheetFieldLabel}>횟수</label>
               <input
-                style={styles.sheetInputSm}
+                style={kkStyles.sheetInputSm}
                 value={reps}
                 onChange={(e) => setReps(e.target.value)}
                 placeholder="8-12"
               />
             </div>
-            <div style={styles.sheetGridItem}>
-              <label style={styles.sheetFieldLabel}>RPE</label>
+            <div style={kkStyles.sheetGridItem}>
+              <label style={kkStyles.sheetFieldLabel}>RPE</label>
               <input
-                style={styles.sheetInputSm}
+                style={kkStyles.sheetInputSm}
                 value={rpe}
                 onChange={(e) => setRpe(e.target.value)}
                 placeholder="8"
               />
             </div>
-            <div style={styles.sheetGridItem}>
-              <label style={styles.sheetFieldLabel}>휴식</label>
+            <div style={kkStyles.sheetGridItem}>
+              <label style={kkStyles.sheetFieldLabel}>휴식</label>
               <input
-                style={styles.sheetInputSm}
+                style={kkStyles.sheetInputSm}
                 value={rest}
                 onChange={(e) => setRest(e.target.value)}
                 placeholder="90초"
@@ -976,7 +1006,7 @@ function ExerciseEditSheet({ exercise, isNew, onSave, onDelete, onClose }) {
 
           {/* 저장 */}
           <button
-            style={{ ...styles.sheetSaveBtn, opacity: nameKo.trim() ? 1 : 0.35 }}
+            style={{ ...kkStyles.sheetSaveBtn, opacity: nameKo.trim() ? 1 : 0.35 }}
             onClick={handleSave}
             disabled={!nameKo.trim()}
           >
@@ -986,13 +1016,13 @@ function ExerciseEditSheet({ exercise, isNew, onSave, onDelete, onClose }) {
           {/* 삭제 */}
           {!isNew && (
             confirmDelete ? (
-              <div style={styles.sheetDeleteConfirm}>
-                <span style={styles.sheetDeleteConfirmText}>정말 삭제할까요?</span>
-                <button style={styles.sheetDeleteConfirmYes} onClick={onDelete}>삭제</button>
-                <button style={styles.sheetDeleteConfirmNo} onClick={() => setConfirmDelete(false)}>취소</button>
+              <div style={kkStyles.sheetDeleteConfirm}>
+                <span style={kkStyles.sheetDeleteConfirmText}>정말 삭제할까요?</span>
+                <button style={kkStyles.sheetDeleteConfirmYes} onClick={onDelete}>삭제</button>
+                <button style={kkStyles.sheetDeleteConfirmNo} onClick={() => setConfirmDelete(false)}>취소</button>
               </div>
             ) : (
-              <button style={styles.sheetDeleteBtn} onClick={() => setConfirmDelete(true)}>
+              <button style={kkStyles.sheetDeleteBtn} onClick={() => setConfirmDelete(true)}>
                 이 운동 삭제
               </button>
             )
@@ -1004,7 +1034,7 @@ function ExerciseEditSheet({ exercise, isNew, onSave, onDelete, onClose }) {
 }
 
 // ====== 운동 기록 화면 ======
-function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBack, onSave, onDelete }) {
+function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBack, onSave, onDelete, viewAnimation }) {
   const suggestion = getProgressionSuggestion(history, exercise, unit);
   // 입력 필드에 표시할 초기값은 unit 기준
   const initialWeight = suggestion.suggestedWeight !== null
@@ -1030,7 +1060,6 @@ function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBa
   // 단위 토글 시 현재 입력된 sets의 weight를 환산
   const handleUnitChange = (newUnit) => {
     if (newUnit === unit) return;
-    // 현재 표시값(unit) → kg → 새 단위(newUnit)으로 환산
     const converted = sets.map(s => {
       if (!s.weight) return s;
       const inKg = toKg(s.weight, unit);
@@ -1051,192 +1080,201 @@ function ExerciseView({ exercise, dayKey, day, history, unit, onUpdateUnit, onBa
     onSave({ date: new Date().toISOString(), sets: setsInKg });
   };
 
+  const hasValidSet = sets.some(s => s.weight && s.reps);
+
   return (
-    <div style={styles.exercisePage}>
-      {/* 헤더 */}
-      <div style={styles.exHeader}>
-        <button style={styles.backBtn} onClick={onBack}>
-          <ChevronLeft size={18} />
-          <span style={styles.backLabel}>BACK</span>
+    <div style={{ ...kkStyles.exercisePage, animation: viewAnimation }}>
+      {/* 상단 헤더 */}
+      <div style={kkStyles.kkExHeader}>
+        <button style={kkStyles.kkBackBtn} onClick={onBack}>
+          <ChevronLeft size={22} color={COLOR.text} />
         </button>
-        <div style={styles.exHeaderContent}>
-          <div style={styles.exTypeRow}>
-            <span style={styles.exType}>
-              {exercise.type === "compound" ? "◆ COMPOUND" : "◇ ISOLATION"}
-            </span>
-            <span style={styles.exChapter}>CH. {day.chapter}</span>
+        <div style={kkStyles.kkExHeaderTitle}>{exercise.nameKo}</div>
+        {/* 단위 토글 우측 */}
+        <UnitToggle unit={unit} onChange={handleUnitChange} />
+      </div>
+
+      <div style={kkStyles.exContent}>
+        {/* 운동 메타 정보 */}
+        <div style={kkStyles.exMetaCard}>
+          <div style={kkStyles.exMetaNameEn}>{exercise.name}</div>
+          <div style={kkStyles.exMetaTypeBadge}>
+            {exercise.type === "compound" ? "컴파운드" : "아이솔레이션"}
           </div>
-          <div style={styles.exTitleKo}>{exercise.nameKo}</div>
-          <div style={styles.exTitleEn}>{exercise.name}</div>
-          <div style={styles.exTargetGrid}>
-            <div style={styles.exTargetCell}>
-              <div style={styles.exTargetLabel}>SETS</div>
-              <div style={styles.exTargetValue}>{exercise.sets}</div>
+          <div style={kkStyles.exMetaGrid}>
+            <div style={kkStyles.exMetaCell}>
+              <div style={kkStyles.exMetaCellLabel}>세트</div>
+              <div style={kkStyles.exMetaCellValue}>{exercise.sets}</div>
             </div>
-            <div style={styles.exTargetCell}>
-              <div style={styles.exTargetLabel}>REPS</div>
-              <div style={styles.exTargetValue}>{exercise.reps}</div>
+            <div style={kkStyles.exMetaCell}>
+              <div style={kkStyles.exMetaCellLabel}>횟수</div>
+              <div style={kkStyles.exMetaCellValue}>{exercise.reps}</div>
             </div>
-            <div style={styles.exTargetCell}>
-              <div style={styles.exTargetLabel}>RPE</div>
-              <div style={styles.exTargetValue}>{exercise.rpe}</div>
+            <div style={kkStyles.exMetaCell}>
+              <div style={kkStyles.exMetaCellLabel}>RPE</div>
+              <div style={kkStyles.exMetaCellValue}>{exercise.rpe}</div>
             </div>
-            <div style={styles.exTargetCell}>
-              <div style={styles.exTargetLabel}>REST</div>
-              <div style={styles.exTargetValueSmall}>{exercise.rest}</div>
+            <div style={kkStyles.exMetaCell}>
+              <div style={kkStyles.exMetaCellLabel}>휴식</div>
+              <div style={{ ...kkStyles.exMetaCellValue, fontSize: 14 }}>{exercise.rest}</div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* 점진적 과부하 카드 */}
-      {suggestion.suggestedWeight !== null && (
-        <div style={styles.suggestionCard}>
-          <CornerMarks color="#8b7d65" />
-          <div style={styles.suggestionInner}>
-            <div style={styles.suggestionTopRow}>
-              <TrendingUp size={14} color="#6b7d4f" />
-              <span style={styles.suggestionTitle}>PROGRESSION COACH</span>
-              <span style={styles.suggestionTag}>AI</span>
+        {/* 점진적 과부하 카드 */}
+        {suggestion.suggestedWeight !== null && (
+          <div style={kkStyles.kkSuggestionCard}>
+            <div style={kkStyles.kkSuggestionTop}>
+              <TrendingUp size={16} color={COLOR.yellow} />
+              <span style={kkStyles.kkSuggestionLabel}>점진적 과부하 추천</span>
+              <span style={kkStyles.kkSuggestionAI}>AI</span>
             </div>
-            <div style={styles.suggestionMessage}>{suggestion.messageKo}</div>
+            <div style={kkStyles.kkSuggestionMsg}>{suggestion.messageKo}</div>
             {suggestion.previousWeight !== undefined && (
-              <div style={styles.suggestionStats}>
-                <div style={styles.suggestionPrev}>
-                  <div style={styles.suggestionPrevLabel}>PREVIOUS</div>
-                  <div style={styles.suggestionPrevValue}>{suggestion.previousWeightDisplay}<span style={styles.kgSmall}>{unitLabel(unit)}</span></div>
+              <div style={kkStyles.kkSuggestionStats}>
+                <div style={kkStyles.kkSuggestionBlock}>
+                  <div style={kkStyles.kkSuggestionBlockLabel}>이전</div>
+                  <div style={{ ...kkStyles.kkSuggestionBlockValue, color: COLOR.textMute, textDecoration: "line-through" }}>
+                    {suggestion.previousWeightDisplay}<span style={kkStyles.unitSm}>{unitLabel(unit)}</span>
+                  </div>
                 </div>
-                <div style={styles.suggestionArrow}>
-                  <span style={styles.arrowLine} />
-                  <span style={styles.arrowHead}>▶</span>
-                </div>
-                <div style={styles.suggestionNext}>
-                  <div style={styles.suggestionNextLabel}>RECOMMENDED</div>
-                  <div style={styles.suggestionNextValue}>{suggestion.suggestedWeightDisplay}<span style={styles.kgSmall}>{unitLabel(unit)}</span></div>
+                <div style={kkStyles.kkSuggestionArrow}>→</div>
+                <div style={kkStyles.kkSuggestionBlock}>
+                  <div style={kkStyles.kkSuggestionBlockLabel}>추천</div>
+                  <div style={{ ...kkStyles.kkSuggestionBlockValue, color: COLOR.text }}>
+                    {suggestion.suggestedWeightDisplay}<span style={kkStyles.unitSm}>{unitLabel(unit)}</span>
+                  </div>
                 </div>
               </div>
             )}
-            <button style={styles.applyBtn} onClick={() => fillAll(suggestion.suggestedWeightDisplay)}>
-              APPLY TO ALL SETS
+            <button style={kkStyles.kkApplyBtn} onClick={() => fillAll(suggestion.suggestedWeightDisplay)}>
+              전체 세트에 적용
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {suggestion.type === "start" && (
-        <div style={styles.startCard}>
-          <CornerMarks color="#8b7d65" />
-          <div style={styles.startInner}>
-            <div style={styles.startTitle}>FIRST SESSION</div>
-            <div style={styles.startMsg}>편안하게 들 수 있는 무게로 시작하세요. 다음 세션부터 자동으로 최적 무게를 추천해드립니다.</div>
+        {/* 첫 세션 안내 카드 */}
+        {suggestion.type === "start" && (
+          <div style={kkStyles.kkStartCard}>
+            <div style={kkStyles.kkStartTitle}>첫 번째 세션</div>
+            <div style={kkStyles.kkStartMsg}>편안하게 들 수 있는 무게로 시작하세요. 다음 세션부터 자동으로 최적 무게를 추천해드립니다.</div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* 쉬는시간 타이머 */}
-      <RestTimer />
+        {/* REST TIMER */}
+        <RestTimer />
 
-      {/* 세트 입력 */}
-      <div style={styles.setsBlock}>
-        <div style={styles.setsBlockHeader}>
-          <div style={styles.setsBlockTitleWrap}>
-            <div style={styles.setsBlockTitle}>TODAY'S SETS</div>
-            <div style={styles.setsBlockSub}>오늘의 세트 · 휴식 {exercise.rest}</div>
+        {/* 세트 입력 */}
+        <div style={kkStyles.kkSetsBlock}>
+          <div style={kkStyles.kkSetsBlockHeader}>
+            <div style={kkStyles.kkSetsBlockTitle}>세트 기록</div>
+            <div style={kkStyles.kkSetsBlockSub}>휴식 {exercise.rest}</div>
           </div>
-          <UnitToggle unit={unit} onChange={handleUnitChange} />
-        </div>
-        <div style={styles.setsTable}>
-          <div style={styles.setsTableHeader}>
-            <div style={styles.setsHeadIdx}>SET</div>
-            <div style={styles.setsHeadCell}>WEIGHT · {unitLabel(unit).toUpperCase()}</div>
-            <div style={styles.setsHeadCell}>REPS</div>
-          </div>
-          {sets.map((set, idx) => (
-            <div key={idx} style={styles.setRow}>
-              <div style={styles.setRowIdx}>{String(idx + 1).padStart(2, "0")}</div>
-              <div style={styles.setRowInputs}>
-                <input
-                  type="number"
-                  value={set.weight}
-                  onChange={(e) => updateSet(idx, "weight", e.target.value)}
-                  style={styles.setInput}
-                  placeholder="—"
-                  inputMode="decimal"
-                />
-                <input
-                  type="number"
-                  value={set.reps}
-                  onChange={(e) => updateSet(idx, "reps", e.target.value)}
-                  style={styles.setInput}
-                  placeholder="—"
-                  inputMode="numeric"
-                />
-              </div>
+          {/* 테이블 헤더 */}
+          <div style={kkStyles.kkSetsTable}>
+            <div style={kkStyles.kkSetsTableHeader}>
+              <div style={kkStyles.kkSetsHeadIdx}>SET</div>
+              <div style={kkStyles.kkSetsHeadCell}>무게 ({unitLabel(unit)})</div>
+              <div style={kkStyles.kkSetsHeadCell}>횟수</div>
             </div>
-          ))}
+            {sets.map((set, idx) => (
+              <div key={idx} style={kkStyles.kkSetRow}>
+                <div style={kkStyles.kkSetRowIdx}>{idx + 1}</div>
+                <div style={kkStyles.kkSetRowInputs}>
+                  <input
+                    type="number"
+                    value={set.weight}
+                    onChange={(e) => updateSet(idx, "weight", e.target.value)}
+                    style={kkStyles.kkSetInput}
+                    placeholder="—"
+                    inputMode="decimal"
+                  />
+                  <input
+                    type="number"
+                    value={set.reps}
+                    onChange={(e) => updateSet(idx, "reps", e.target.value)}
+                    style={kkStyles.kkSetInput}
+                    placeholder="—"
+                    inputMode="numeric"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <button
-        style={{ ...styles.saveBtn, opacity: sets.some(s => s.weight && s.reps) ? 1 : 0.4 }}
-        onClick={handleSave}
-        disabled={!sets.some(s => s.weight && s.reps)}
-      >
-        <span>RECORD SESSION</span>
-        <span style={styles.saveBtnArrow}>→</span>
-      </button>
+        {/* RECORD SESSION 버튼 */}
+        <button
+          style={{
+            ...kkStyles.kkRecordBtn,
+            background: hasValidSet ? COLOR.yellow : COLOR.text,
+            color: hasValidSet ? COLOR.text : COLOR.white,
+            boxShadow: hasValidSet ? COLOR.shadowYellow : "none",
+            opacity: hasValidSet ? 1 : 0.6,
+          }}
+          onClick={handleSave}
+          disabled={!hasValidSet}
+        >
+          세션 기록하기
+        </button>
 
-      {/* 히스토리 */}
-      {history.length > 0 && (
-        <div style={styles.historyBlock}>
-          <button style={styles.historyToggle} onClick={() => setShowHistory(!showHistory)}>
-            <Calendar size={13} />
-            <span style={styles.historyToggleLabel}>PREVIOUS RECORDS · {history.length}</span>
-            <ChevronRight size={13} style={{ transform: showHistory ? "rotate(90deg)" : "none", transition: "transform 0.2s" }} />
-          </button>
-          {showHistory && (
-            <div style={styles.historyList}>
-              {[...history].reverse().map((session, idx) => {
-                const realIdx = history.length - 1 - idx;
-                const date = new Date(session.date);
-                // 볼륨은 kg 기준으로 계산 후 unit으로 환산
-                const volumeKg = session.sets.reduce((s, set) => s + (parseFloat(set.weight) || 0) * (parseInt(set.reps) || 0), 0);
-                const volumeDisplay = unit === "lb"
-                  ? Math.round(volumeKg * LBS_PER_KG)
-                  : Math.round(volumeKg);
-                return (
-                  <div key={idx} style={styles.historyCard}>
-                    <CornerMarks color="#8b7d65" />
-                    <div style={styles.historyCardInner}>
-                      <div style={styles.historyTopRow}>
-                        <div style={styles.historyDate}>
-                          {date.toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()}
-                          <span style={styles.historyDay}>{date.toLocaleDateString("ko-KR", { weekday: "short" })}</span>
+        {/* 히스토리 */}
+        {history.length > 0 && (
+          <div style={kkStyles.kkHistoryBlock}>
+            <button style={kkStyles.kkHistoryToggle} onClick={() => setShowHistory(!showHistory)}>
+              <Calendar size={14} color={COLOR.textMute} />
+              <span style={kkStyles.kkHistoryToggleLabel}>이전 기록 · {history.length}회</span>
+              <ChevronRight
+                size={14}
+                color={COLOR.textMute}
+                style={{ transform: showHistory ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}
+              />
+            </button>
+            {showHistory && (
+              <div style={kkStyles.kkHistoryList}>
+                {[...history].reverse().map((session, idx) => {
+                  const realIdx = history.length - 1 - idx;
+                  const date = new Date(session.date);
+                  // 볼륨은 kg 기준으로 계산 후 unit으로 환산
+                  const volumeKg = session.sets.reduce((s, set) => s + (parseFloat(set.weight) || 0) * (parseInt(set.reps) || 0), 0);
+                  const volumeDisplay = unit === "lb"
+                    ? Math.round(volumeKg * LBS_PER_KG)
+                    : Math.round(volumeKg);
+                  return (
+                    <div key={idx} style={kkStyles.kkHistoryCard}>
+                      <div style={kkStyles.kkHistoryCardHeader}>
+                        <div style={kkStyles.kkHistoryDate}>
+                          {date.toLocaleDateString("ko-KR", { month: "short", day: "numeric", weekday: "short" })}
                         </div>
-                        <button style={styles.historyDelete} onClick={() => onDelete(realIdx)}>
-                          <Trash2 size={11} />
+                        <button style={kkStyles.kkHistoryDelete} onClick={() => onDelete(realIdx)}>
+                          <Trash2 size={13} color={COLOR.textLight} />
                         </button>
                       </div>
-                      <div style={styles.historySetGrid}>
+                      <div style={kkStyles.kkHistorySetGrid}>
                         {session.sets.map((set, si) => (
-                          <div key={si} style={styles.historySetItem}>
-                            <span style={styles.historySetNum}>S{si + 1}</span>
-                            <span style={styles.historySetVal}>{toDisplay(set.weight, unit)}<span style={styles.kgTiny}>{unitLabel(unit)}</span> × {set.reps}</span>
+                          <div key={si} style={kkStyles.kkHistorySetItem}>
+                            <span style={kkStyles.kkHistorySetNum}>S{si + 1}</span>
+                            <span style={kkStyles.kkHistorySetVal}>
+                              {toDisplay(set.weight, unit)}<span style={kkStyles.unitTiny}>{unitLabel(unit)}</span>
+                              {" × "}{set.reps}
+                            </span>
                           </div>
                         ))}
                       </div>
-                      <div style={styles.historyVolumeRow}>
-                        <span style={styles.historyVolLabel}>TOTAL VOLUME</span>
-                        <span style={styles.historyVolValue}>{volumeDisplay.toLocaleString()}<span style={styles.kgTiny}>{unitLabel(unit)}</span></span>
+                      <div style={kkStyles.kkHistoryVolRow}>
+                        <span style={kkStyles.kkHistoryVolLabel}>총 볼륨</span>
+                        <span style={kkStyles.kkHistoryVolValue}>
+                          {volumeDisplay.toLocaleString()}<span style={kkStyles.unitTiny}>{unitLabel(unit)}</span>
+                        </span>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1253,7 +1291,6 @@ function RestTimer() {
     const id = setInterval(() => {
       setSeconds(s => {
         if (s <= 1) {
-          // 타이머 종료 → 완료 알림 표시
           setRunning(false);
           setDone(true);
           return 0;
@@ -1288,182 +1325,111 @@ function RestTimer() {
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
 
-  // 타이머 상태에 따른 색상
-  const digitColor = done
-    ? COLOR.accentGreen
-    : running
-    ? COLOR.accentBrass
-    : COLOR.textDark;
+  // 타이머 숫자 색상: 실행 중 → 진한 노란, 완료 → 초록, 기본 → 검은
+  const digitColor = done ? COLOR.green : running ? COLOR.yellowDeep : COLOR.text;
 
   return (
     <>
-      {/* 타이머 완료 시 전체화면 알림 (소리 없음) */}
+      {/* 타이머 완료 시 전체화면 알림 */}
       {done && (
-        <div style={styles.timerDoneOverlay} onClick={() => setDone(false)}>
-          <div style={styles.timerDoneBox}>
-            <div style={styles.timerDoneMark}>◆</div>
-            <div style={styles.timerDoneTitle}>휴식 완료</div>
-            <div style={styles.timerDoneSub}>REST COMPLETE</div>
-            <div style={styles.timerDoneTap}>화면을 탭하여 닫기</div>
+        <div style={kkStyles.timerDoneOverlay} onClick={() => setDone(false)}>
+          <div style={kkStyles.timerDoneBox}>
+            <div style={kkStyles.timerDoneEmoji}>✅</div>
+            <div style={kkStyles.timerDoneTitle}>휴식 완료!</div>
+            <div style={kkStyles.timerDoneSub}>다음 세트를 시작하세요</div>
+            <div style={kkStyles.timerDoneTap}>화면을 탭하여 닫기</div>
           </div>
         </div>
       )}
 
-      <div style={styles.timerBlock}>
-        {/* 헤더 */}
-        <div style={styles.timerHeader}>
-          <div style={styles.timerLabel}>REST TIMER</div>
-          <div style={styles.timerLabelKo}>쉬는시간 타이머</div>
+      <div style={kkStyles.kkTimerBlock}>
+        <div style={kkStyles.kkTimerHeader}>
+          <span style={kkStyles.kkTimerLabel}>REST TIMER</span>
+          <span style={kkStyles.kkTimerLabelKo}>쉬는시간 타이머</span>
         </div>
 
         {/* 카운트다운 표시 */}
-        <div style={styles.timerDisplay}>
-          <span style={{ ...styles.timerDigits, color: digitColor }}>
+        <div style={kkStyles.kkTimerDisplay}>
+          <span style={{ ...kkStyles.kkTimerDigits, color: digitColor }}>
             {mm}:{ss}
           </span>
         </div>
 
         {/* 시간 추가 버튼 */}
-        <div style={styles.timerAddRow}>
-          <button style={styles.timerAddBtn} onClick={() => addTime(10)}>
-            +10초
-          </button>
-          <button style={styles.timerAddBtn} onClick={() => addTime(60)}>
-            +1분
-          </button>
+        <div style={kkStyles.kkTimerAddRow}>
+          <button style={kkStyles.kkTimerAddBtn} onClick={() => addTime(10)}>+10초</button>
+          <button style={kkStyles.kkTimerAddBtn} onClick={() => addTime(60)}>+1분</button>
         </div>
 
         {/* 시작/일시정지 + 리셋 */}
-        <div style={styles.timerControlRow}>
+        <div style={kkStyles.kkTimerControlRow}>
           <button
-            style={{ ...styles.timerStartBtn, opacity: seconds === 0 ? 0.35 : 1 }}
+            style={{ ...kkStyles.kkTimerStartBtn, opacity: seconds === 0 ? 0.35 : 1 }}
             onClick={toggleRun}
             disabled={seconds === 0}
           >
             {running ? "일시정지" : "시작"}
           </button>
-          <button style={styles.timerResetBtn} onClick={reset}>
-            리셋
-          </button>
+          <button style={kkStyles.kkTimerResetBtn} onClick={reset}>리셋</button>
         </div>
       </div>
     </>
   );
 }
 
-// ====== 글로벌 CSS (애니메이션 등) ======
-const globalCSS = `
-  /* 인풋 placeholder color */
-  input::placeholder { color: #c9c0aa; }
+// ====== 카카오 스타일 스타일 시트 ======
+const kkStyles = {
 
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.45; }
-  }
-
-  @keyframes slideUp {
-    from { transform: translateY(100%); }
-    to   { transform: translateY(0); }
-  }
-`;
-
-// ====== 색상 토큰 ======
-const COLOR = {
-  // 배경
-  bgPaper: "#ebe5d7",        // 카키 베이지 (종이 톤)
-  bgPaperDeep: "#dfd7c4",    // 진한 카키 베이지
-  bgDark: "#1f1c17",         // 거의 블랙 (따뜻한 톤)
-  bgDarkDeep: "#0f0d0a",     // 완전 블랙
-  // 카키
-  khakiLight: "#a8a087",
-  khakiMid: "#7a7359",
-  khakiDeep: "#5a5240",
-  // 브라운
-  brownLight: "#a08766",
-  brownMid: "#735a3f",
-  brownDeep: "#4a3823",
-  // 액센트
-  accentGreen: "#6b7d4f",    // 올리브 그린 (액센트)
-  accentBrass: "#a89060",    // 황동 골드 (액센트)
-  // 텍스트
-  textDark: "#1f1c17",
-  textMid: "#5a5240",
-  textMute: "#8b7d65",
-  textLight: "#bfb39c",
-  // 라인
-  line: "#c9c0aa",
-  lineLight: "#d8d1bc",
-};
-
-// ====== 스타일 ======
-const styles = {
-  // === LOADING ===
+  // ===== 로딩 =====
   loadingScreen: {
     height: "100vh",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    background: COLOR.bgDark,
-    color: COLOR.bgPaper,
+    background: COLOR.yellow,
     gap: "16px",
   },
-  loadingMark: {
+  loadingSpinner: {
     fontSize: "32px",
-    color: COLOR.accentBrass,
-    animation: "pulse 1.8s ease-in-out infinite",
+    color: COLOR.text,
+    animation: "pulse 1.5s ease-in-out infinite",
   },
   loadingText: {
-    fontFamily: "\'Geist Mono\', monospace",
-    fontSize: "14px",
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "13px",
     letterSpacing: "0.5em",
-    textTransform: "uppercase",
+    fontWeight: 700,
+    color: COLOR.text,
   },
 
-  // === CONTAINER ===
-  container: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    background: `
-      radial-gradient(ellipse at top, #f0eadc 0%, ${COLOR.bgPaper} 50%, ${COLOR.bgPaperDeep} 100%)
-    `,
+  // ===== 앱 루트 =====
+  appRoot: {
+    fontFamily: "'KakaoBigFont', 'Apple SD Gothic Neo', sans-serif",
+    background: COLOR.bgSub,
     minHeight: "100vh",
-    color: COLOR.textDark,
-    paddingBottom: "calc(40px + env(safe-area-inset-bottom, 0px))",
+    color: COLOR.text,
     position: "relative",
+    maxWidth: "480px",
+    margin: "0 auto",
     overflow: "hidden",
   },
-  noise: {
-    position: "fixed",
-    inset: 0,
-    width: "100%",
-    height: "100%",
-    pointerEvents: "none",
-    opacity: 0.35,
-    mixBlendMode: "multiply",
-    zIndex: 0,
-  },
 
-  // === INSTALL HINT (iOS PWA) ===
+  // ===== iOS 홈화면 추가 안내 =====
   installHint: {
     position: "fixed",
-    bottom: "calc(20px + env(safe-area-inset-bottom, 0px))",
+    bottom: "calc(80px + env(safe-area-inset-bottom, 0px))",
     left: "16px",
     right: "16px",
-    zIndex: 100,
-    background: `linear-gradient(180deg, ${COLOR.bgDark} 0%, ${COLOR.bgDarkDeep} 100%)`,
-    borderRadius: "2px",
-    border: `1px solid ${COLOR.brownDeep}`,
-    boxShadow: "0 12px 32px -8px rgba(15, 13, 10, 0.5)",
-    animation: "fadeUp 0.5s ease",
+    zIndex: 200,
+    background: COLOR.text,
+    borderRadius: "16px",
+    boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+    animation: "fadeIn 0.4s ease",
   },
   installHintInner: {
-    padding: "16px 18px",
-    color: COLOR.bgPaper,
+    padding: "18px 20px",
+    color: COLOR.white,
   },
   installHintHeader: {
     display: "flex",
@@ -1472,1212 +1438,599 @@ const styles = {
     marginBottom: "8px",
   },
   installHintTitle: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontWeight: 800,
+    fontWeight: 700,
     fontSize: "15px",
-    letterSpacing: "-0.02em",
-    color: COLOR.accentBrass,
+    color: COLOR.yellow,
   },
   installHintClose: {
-    color: COLOR.khakiLight,
-    fontSize: "22px",
+    color: COLOR.textLight,
+    fontSize: "24px",
     lineHeight: 1,
     padding: "0 4px",
-    fontWeight: 300,
+    background: "none",
+    border: "none",
+    cursor: "pointer",
   },
   installHintBody: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontSize: "12px",
-    fontWeight: 400,
-    lineHeight: 1.6,
-    color: COLOR.khakiLight,
-  },
-  installHintIcon: {
-    display: "inline-block",
     fontSize: "13px",
-    color: COLOR.accentBrass,
-    fontWeight: 700,
-    margin: "0 2px",
-  },
-  installHintBold: {
-    color: COLOR.bgPaper,
-    fontWeight: 700,
+    lineHeight: 1.6,
+    color: "rgba(255,255,255,0.8)",
   },
 
-  // === MAGAZINE HEADER ===
-  home: {
-    padding: "calc(16px + env(safe-area-inset-top, 0px)) 20px 0",
-    animation: "fadeUp 0.5s ease",
-    position: "relative",
-    zIndex: 1,
+  // ===== 페이지 공통 컨테이너 =====
+  pageContainer: {
+    minHeight: "100vh",
+    background: COLOR.bgSub,
+    display: "flex",
+    flexDirection: "column",
   },
-  magazineHeader: {
-    paddingTop: "16px",
-    paddingBottom: "32px",
-  },
-  headerTopRow: {
+
+  // ===== 홈 공통 헤더 =====
+  kkHeader: {
+    background: COLOR.white,
+    padding: "calc(env(safe-area-inset-top, 12px) + 12px) 20px 12px",
+    borderBottom: `1px solid ${COLOR.line}`,
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "12px",
+    alignItems: "flex-end",
+    position: "sticky",
+    top: 0,
+    zIndex: 50,
   },
-  dateLabel: {
-    fontSize: "9px",
-    letterSpacing: "0.25em",
-    color: COLOR.textMute,
-    fontWeight: 500,
+  kkHeaderLeft: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
   },
-  issueLabel: {
-    fontSize: "9px",
-    letterSpacing: "0.25em",
-    color: COLOR.textMute,
-    fontWeight: 500,
-  },
-  divider: {
-    height: "1px",
-    background: COLOR.khakiDeep,
-    opacity: 0.5,
-  },
-  titleBlock: {
-    textAlign: "center",
-    padding: "20px 0 16px",
-  },
-  titleSerif: {
+  kkLogo: {
     fontFamily: "'KakaoBigFont', sans-serif",
     fontWeight: 800,
-    fontSize: "48px",
-    color: COLOR.textDark,
+    fontSize: "22px",
+    color: COLOR.text,
+    letterSpacing: "-0.03em",
+    lineHeight: 1,
+  },
+  kkLogoSub: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "9px",
+    letterSpacing: "0.4em",
+    color: COLOR.yellow,
+    fontWeight: 700,
+  },
+  kkHeaderDate: {
+    fontSize: "10px",
+    color: COLOR.textMute,
+    fontWeight: 400,
+  },
+
+  // ===== 탭 콘텐츠 영역 =====
+  tabContent: {
+    flex: 1,
+    padding: "20px 16px",
+    paddingBottom: "calc(64px + env(safe-area-inset-bottom, 0px) + 20px)",
+    overflowY: "auto",
+  },
+
+  // ===== 오늘 탭: 히어로 카드 =====
+  todayHeroCard: {
+    background: COLOR.yellow,
+    borderRadius: "20px",
+    padding: "28px 24px",
+    marginBottom: "16px",
+    cursor: "pointer",
+    boxShadow: COLOR.shadowYellow,
+  },
+  todayHeroBadge: {
+    display: "inline-block",
+    fontSize: "10px",
+    fontWeight: 600,
+    color: COLOR.text,
+    background: "rgba(0,0,0,0.08)",
+    borderRadius: "100px",
+    padding: "4px 10px",
+    marginBottom: "16px",
+  },
+  todayHeroName: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 800,
+    fontSize: "52px",
+    color: COLOR.text,
     letterSpacing: "-0.04em",
     lineHeight: 1,
-    marginBottom: "10px",
+    marginBottom: "6px",
   },
-  titleEn: {
-    fontFamily: "'Geist Mono', monospace",
-    fontWeight: 400,
-    fontSize: "11px",
-    color: COLOR.accentBrass,
-    letterSpacing: "0.5em",
-    paddingLeft: "0.5em",
-    marginBottom: "10px",
+  todayHeroSub: {
+    fontSize: "14px",
+    color: "rgba(0,0,0,0.55)",
+    marginBottom: "4px",
   },
-  titleSub: {
-    fontSize: "10px",
-    letterSpacing: "0.4em",
-    color: COLOR.khakiDeep,
-    fontWeight: 600,
+  todayHeroCta: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "15px",
+    color: COLOR.text,
+    textAlign: "right",
+    marginTop: "20px",
   },
-  headerBottomRow: {
+
+  // ===== 오늘 탭: 쉬는 날 카드 =====
+  restDayCard: {
+    background: COLOR.white,
+    borderRadius: "20px",
+    padding: "32px 24px",
+    marginBottom: "16px",
+    textAlign: "center",
+    boxShadow: COLOR.shadow,
+  },
+  restDayEmoji: {
+    fontSize: "40px",
+    marginBottom: "12px",
+  },
+  restDayTitle: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "20px",
+    color: COLOR.text,
+    marginBottom: "6px",
+  },
+  restDaySub: {
+    fontSize: "13px",
+    color: COLOR.textMute,
+  },
+
+  // ===== 오늘 탭: 통계 카드 3개 =====
+  statCardRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: "10px",
+  },
+  statCard: {
+    background: COLOR.white,
+    borderRadius: "16px",
+    padding: "16px 12px",
+    textAlign: "center",
+    boxShadow: COLOR.shadow,
     display: "flex",
-    justifyContent: "space-between",
+    flexDirection: "column",
     alignItems: "center",
-    marginTop: "12px",
+    gap: "2px",
   },
-  tagline: {
-    fontSize: "9px",
-    letterSpacing: "0.2em",
+  statCardValue: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 800,
+    fontSize: "28px",
+    color: COLOR.text,
+    letterSpacing: "-0.03em",
+    lineHeight: 1,
+  },
+  statCardUnit: {
+    fontSize: "10px",
     color: COLOR.textMute,
     fontWeight: 500,
   },
+  statCardLabel: {
+    fontSize: "11px",
+    color: COLOR.textSub,
+    fontWeight: 600,
+    marginTop: "4px",
+  },
 
-  // === SECTION ===
-  section: {
-    marginBottom: "32px",
-  },
-  sectionHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    marginBottom: "14px",
-  },
-  sectionNumber: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "20px",
-    color: COLOR.accentBrass,
-    fontWeight: 500,
-  },
-  sectionTitleWrap: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: "8px",
-  },
+  // ===== 섹션 타이틀 =====
   sectionTitle: {
     fontFamily: "'KakaoBigFont', sans-serif",
-    fontSize: "16px",
     fontWeight: 700,
-    color: COLOR.textDark,
+    fontSize: "17px",
+    color: COLOR.text,
+    marginBottom: "14px",
     letterSpacing: "-0.02em",
   },
-  sectionTitleKo: {
-    fontSize: "9px",
-    letterSpacing: "0.25em",
-    color: COLOR.textMute,
-    fontWeight: 400,
+
+  // ===== 루틴 탭: 분할 카드 =====
+  splitCard: {
+    background: COLOR.white,
+    borderRadius: "16px",
+    padding: "20px",
+    marginBottom: "10px",
+    boxShadow: COLOR.shadow,
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    cursor: "pointer",
   },
-  sectionLine: {
+  splitCardLeft: {
     flex: 1,
-    height: "1px",
-    background: COLOR.line,
+  },
+  splitCardChapter: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "12px",
+    fontWeight: 700,
+    color: COLOR.yellowDeep,
+    marginBottom: "4px",
+    letterSpacing: "0.1em",
+  },
+  splitCardName: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 800,
+    fontSize: "28px",
+    color: COLOR.text,
+    letterSpacing: "-0.04em",
+    lineHeight: 1,
+    marginBottom: "4px",
+  },
+  splitCardSub: {
+    fontSize: "12px",
+    color: COLOR.textMute,
+  },
+  splitCardDay: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "11px",
+    fontWeight: 700,
+    color: COLOR.textLight,
+    letterSpacing: "0.1em",
   },
 
-  // === STATS CARD ===
-  statsCard: {
-    background: `linear-gradient(135deg, #f5efdf 0%, ${COLOR.bgPaper} 100%)`,
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "2px",
-    position: "relative",
-    boxShadow: "0 1px 0 rgba(255,255,255,0.4) inset, 0 6px 16px -8px rgba(31, 28, 23, 0.15)",
-  },
-  statsCardInner: {
-    padding: "20px 18px",
-  },
-  statsTopRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "16px",
-    paddingBottom: "12px",
-    borderBottom: `1px dashed ${COLOR.line}`,
-  },
-  statsTopRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
-  // UnitToggle
-  unitToggle: {
-    display: "inline-flex",
-    border: `1px solid ${COLOR.khakiMid}`,
-    borderRadius: "1px",
+  // ===== 신체 탭: 카드 =====
+  bodyCard: {
+    background: COLOR.white,
+    borderRadius: "16px",
+    boxShadow: COLOR.shadow,
     overflow: "hidden",
-    background: "rgba(255,255,255,0.3)",
   },
-  unitToggleBtn: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "9px",
-    letterSpacing: "0.15em",
-    fontWeight: 600,
-    padding: "5px 9px",
-    color: COLOR.textMute,
-    background: "transparent",
-    transition: "all 0.15s ease",
+  bodyCardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "18px 20px 14px",
+    borderBottom: `1px solid ${COLOR.line}`,
   },
-  unitToggleBtnActive: {
-    background: COLOR.bgDark,
-    color: COLOR.accentBrass,
+  bodyCardTitle: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "16px",
+    color: COLOR.text,
   },
-  statsLabel: {
-    fontSize: "9px",
-    letterSpacing: "0.3em",
-    color: COLOR.khakiDeep,
-    fontWeight: 600,
+  bodyEditBtn: {
+    background: COLOR.yellow,
+    color: COLOR.text,
+    fontWeight: 700,
+    fontSize: "13px",
+    padding: "6px 14px",
+    borderRadius: "8px",
+    border: "none",
+    cursor: "pointer",
   },
-  editBtn: {
-    fontSize: "9px",
-    letterSpacing: "0.2em",
-    color: COLOR.brownMid,
-    fontWeight: 600,
-    padding: "5px 10px",
-    border: `1px solid ${COLOR.brownMid}`,
-    borderRadius: "1px",
-    background: "transparent",
-  },
-  statsGrid: {
+  bodyStatGrid: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
+    padding: "20px",
   },
-  statCell: {
+  bodyStatCell: {
     flex: 1,
     textAlign: "center",
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    alignItems: "center",
+    gap: "2px",
   },
-  statCellLabel: {
-    fontSize: "8px",
-    letterSpacing: "0.25em",
-    color: COLOR.textMute,
-    fontWeight: 600,
-  },
-  statCellValue: {
+  bodyStatValue: {
     fontFamily: "'KakaoBigFont', sans-serif",
-    fontWeight: 700,
+    fontWeight: 800,
     fontSize: "32px",
-    color: COLOR.textDark,
-    letterSpacing: "-0.02em",
+    color: COLOR.text,
+    letterSpacing: "-0.03em",
     lineHeight: 1,
   },
-  statCellUnit: {
-    fontSize: "8px",
-    letterSpacing: "0.2em",
-    color: COLOR.khakiDeep,
-    fontWeight: 600,
-    textTransform: "uppercase",
+  bodyStatUnit: {
+    fontSize: "11px",
+    color: COLOR.textMute,
+    fontWeight: 500,
   },
-  vDivider: {
+  bodyStatLabel: {
+    fontSize: "11px",
+    color: COLOR.textSub,
+    fontWeight: 600,
+    marginTop: "4px",
+  },
+  bodyStatDivider: {
     width: "1px",
     height: "40px",
     background: COLOR.line,
   },
-  statsEditWrap: {
+  bodyEditSection: {
+    padding: "16px 20px 20px",
     display: "flex",
     flexDirection: "column",
     gap: "12px",
   },
-  statsInputRow: {
+  bodyInputRow: {
     display: "flex",
     gap: "12px",
   },
-  statsInputWrap: {
+  bodyInputWrap: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
     gap: "6px",
   },
-  statsInputLabel: {
-    fontSize: "8px",
-    letterSpacing: "0.2em",
-    color: COLOR.khakiDeep,
+  bodyInputLabel: {
+    fontSize: "12px",
+    color: COLOR.textSub,
     fontWeight: 600,
   },
-  statsInput: {
+  bodyInput: {
     width: "100%",
-    padding: "10px 12px",
-    border: `1px solid ${COLOR.khakiMid}`,
-    borderRadius: "1px",
+    padding: "14px",
+    border: `1.5px solid ${COLOR.line}`,
+    borderRadius: "10px",
     fontSize: "16px",
     fontWeight: 600,
     fontFamily: "'KakaoBigFont', sans-serif",
-    background: "rgba(255,255,255,0.4)",
     outline: "none",
-    color: COLOR.textDark,
+    color: COLOR.text,
+    background: COLOR.bgSub,
   },
-  saveStatsBtn: {
-    background: COLOR.bgDark,
-    color: COLOR.bgPaper,
-    padding: "12px",
-    borderRadius: "1px",
-    fontWeight: 600,
-    fontSize: "10px",
-    letterSpacing: "0.3em",
-  },
-
-  // === SUMMARY ===
-  summaryGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "8px",
-  },
-  summaryCard: {
-    position: "relative",
-    background: "rgba(255,255,255,0.35)",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "2px",
-  },
-  summaryInner: {
-    padding: "14px 10px",
-    textAlign: "center",
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    alignItems: "center",
-  },
-  summaryLabel: {
-    fontSize: "8px",
-    letterSpacing: "0.25em",
-    color: COLOR.khakiDeep,
-    fontWeight: 600,
-  },
-  summaryValue: {
+  bodySaveBtn: {
+    background: COLOR.yellow,
+    color: COLOR.text,
+    padding: "14px",
+    borderRadius: "12px",
     fontFamily: "'KakaoBigFont', sans-serif",
     fontWeight: 700,
-    fontSize: "28px",
-    color: COLOR.textDark,
-    letterSpacing: "-0.02em",
-    lineHeight: 1,
-  },
-  summarySuffix: {
-    fontSize: "8px",
-    letterSpacing: "0.15em",
-    color: COLOR.textMute,
-    fontWeight: 500,
-    textTransform: "uppercase",
+    fontSize: "15px",
+    border: "none",
+    cursor: "pointer",
+    boxShadow: COLOR.shadowYellow,
   },
 
-  // === TODAY CARD ===
-  todayCard: {
-    background: `linear-gradient(170deg, ${COLOR.bgDark} 0%, ${COLOR.bgDarkDeep} 100%)`,
-    color: COLOR.bgPaper,
-    borderRadius: "2px",
+  // ===== 하단 탭바 =====
+  tabBar: {
+    position: "fixed",
+    bottom: 0,
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: "100%",
+    maxWidth: "480px",
+    background: COLOR.white,
+    borderTop: `1px solid ${COLOR.line}`,
+    display: "flex",
+    height: "calc(64px + env(safe-area-inset-bottom, 0px))",
+    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+    zIndex: 100,
+  },
+  tabBarBtn: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "3px",
+    background: "none",
+    border: "none",
     cursor: "pointer",
-    position: "relative",
-    overflow: "hidden",
-    boxShadow: "0 12px 32px -8px rgba(15, 13, 10, 0.45)",
-    border: `1px solid ${COLOR.brownDeep}`,
+    padding: "8px 0",
   },
-  todayInner: {
-    padding: "28px 24px",
-    position: "relative",
+  tabBarBtnActive: {
+    // 활성 탭 스타일 (아이콘/텍스트 색상은 children에서 직접 제어)
   },
-  todayChapter: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "12px",
-    letterSpacing: "0.3em",
-    color: COLOR.accentBrass,
-    fontWeight: 500,
-    marginBottom: "10px",
+  tabBarIcon: {
+    fontSize: "22px",
+    lineHeight: 1,
   },
-  todayName: {
+  tabBarLabel: {
+    fontSize: "10px",
+    fontWeight: 600,
+    color: COLOR.textMute,
+  },
+
+  // ===== 워크아웃 뷰 =====
+  workoutPage: {
+    minHeight: "100vh",
+    background: COLOR.bgSub,
+    paddingBottom: "40px",
+  },
+  kkWorkoutHeader: {
+    background: COLOR.white,
+    borderBottom: `1px solid ${COLOR.line}`,
+    padding: "calc(env(safe-area-inset-top, 12px) + 12px) 16px 12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    position: "sticky",
+    top: 0,
+    zIndex: 50,
+  },
+  kkBackBtn: {
+    width: 40,
+    height: 40,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    borderRadius: "10px",
+  },
+  kkWorkoutTitle: {
     fontFamily: "'KakaoBigFont', sans-serif",
     fontWeight: 800,
-    fontSize: "56px",
-    letterSpacing: "-0.04em",
-    lineHeight: 0.95,
-    marginBottom: "8px",
-    color: COLOR.bgPaper,
+    fontSize: "20px",
+    color: COLOR.text,
+    letterSpacing: "-0.03em",
+    textAlign: "center",
   },
-  todayItalic: {
-    fontFamily: "\'Geist Mono\', monospace",
-    fontSize: "16px",
-    fontWeight: 400,
-    color: COLOR.khakiLight,
-    marginBottom: "16px",
+
+  // 진행률 바
+  progressBarTrack: {
+    height: "4px",
+    background: COLOR.line,
+    position: "sticky",
+    top: "calc(env(safe-area-inset-top, 0px) + 60px)",
+    zIndex: 49,
   },
-  todayDivider: {
-    height: "1px",
-    background: `linear-gradient(90deg, ${COLOR.accentBrass} 0%, transparent 100%)`,
-    marginBottom: "16px",
+  progressBarFill: {
+    height: "100%",
+    background: COLOR.yellow,
+    transition: "width 0.4s ease",
   },
-  todayMeta: {
-    display: "flex",
-    gap: "8px",
-    fontSize: "9px",
-    letterSpacing: "0.2em",
-    color: COLOR.khakiLight,
-    fontWeight: 500,
-    marginBottom: "20px",
-    flexWrap: "wrap",
+
+  workoutContent: {
+    padding: "20px 16px",
   },
-  todayCta: {
+  workoutSubHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: "16px",
-    borderTop: `1px dashed ${COLOR.khakiDeep}`,
-    fontSize: "10px",
-    letterSpacing: "0.25em",
-    fontWeight: 600,
-    color: COLOR.accentBrass,
+    marginBottom: "20px",
   },
-
-  // === SPLIT LIST ===
-  splitList: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  splitRow: {
-    background: "rgba(255,255,255,0.25)",
-    border: `1px solid ${COLOR.line}`,
-    borderBottom: "none",
-    padding: "16px 14px",
-    display: "flex",
-    alignItems: "center",
-    gap: "14px",
-    cursor: "pointer",
-  },
-  splitChapter: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "22px",
-    color: COLOR.accentBrass,
-    fontWeight: 500,
-    width: "32px",
-    textAlign: "center",
-  },
-  splitMain: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-  },
-  splitDay: {
-    fontSize: "10px",
-    letterSpacing: "0.25em",
-    color: COLOR.khakiDeep,
-    fontWeight: 700,
-    width: "30px",
-  },
-  splitContent: {
-    flex: 1,
-  },
-  splitName: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontWeight: 700,
-    fontSize: "20px",
-    letterSpacing: "-0.02em",
-    color: COLOR.textDark,
-    lineHeight: 1,
-    marginBottom: "4px",
-  },
-  splitSubtitle: {
-    fontSize: "10px",
-    letterSpacing: "0.1em",
-    color: COLOR.textMute,
-    fontWeight: 500,
-  },
-  splitArrow: {
-    color: COLOR.khakiDeep,
-  },
-
-  // === FOOTER ===
-  footer: {
-    marginTop: "40px",
-    paddingTop: "28px",
-    textAlign: "center",
-    borderTop: `1px solid ${COLOR.line}`,
-  },
-  footerOrnament: {
-    color: COLOR.accentBrass,
-    fontSize: "12px",
-    letterSpacing: "0.5em",
-    marginBottom: "10px",
-  },
-  footerText: {
-    fontSize: "9px",
-    letterSpacing: "0.25em",
-    color: COLOR.khakiDeep,
-    fontWeight: 600,
-    marginBottom: "6px",
-  },
-  footerSub: {
-    fontFamily: "\'Geist Mono\', monospace",
-    fontSize: "11px",
-    color: COLOR.textMute,
-  },
-
-  // === WORKOUT PAGE ===
-  workoutPage: {
-    animation: "fadeUp 0.5s ease",
-    position: "relative",
-    zIndex: 1,
-  },
-  dayHeader: {
-    background: `linear-gradient(180deg, ${COLOR.bgDark} 0%, ${COLOR.bgDarkDeep} 100%)`,
-    color: COLOR.bgPaper,
-    padding: "calc(16px + env(safe-area-inset-top, 0px)) 20px 32px",
-    position: "relative",
-    overflow: "hidden",
-  },
-  backBtn: {
-    color: COLOR.khakiLight,
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "8px 0",
-    fontSize: "10px",
-    letterSpacing: "0.2em",
-    fontWeight: 600,
-    marginBottom: "8px",
-  },
-  backLabel: {
-    color: COLOR.khakiLight,
-  },
-  dayHeaderInner: {
-    paddingTop: "8px",
-  },
-  chapterMark: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "12px",
-    letterSpacing: "0.3em",
-    color: COLOR.accentBrass,
-    fontWeight: 500,
-    textAlign: "center",
-    marginBottom: "10px",
-  },
-  dayDivider: {
-    height: "1px",
-    background: `linear-gradient(90deg, transparent 0%, ${COLOR.khakiDeep} 50%, transparent 100%)`,
-    margin: "12px 0",
-  },
-  dayHeroName: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontWeight: 800,
-    fontSize: "60px",
-    letterSpacing: "-0.05em",
-    lineHeight: 0.9,
-    color: COLOR.bgPaper,
-    textAlign: "center",
-    marginBottom: "8px",
-  },
-  dayHeroSub: {
-    fontFamily: "\'Geist Mono\', monospace",
+  workoutSubTitle: {
     fontSize: "14px",
-    fontWeight: 400,
-    color: COLOR.khakiLight,
-    textAlign: "center",
+    color: COLOR.textSub,
+    fontWeight: 500,
   },
-  dayProgressRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-  },
-  dayProgressLabel: {
-    fontSize: "9px",
-    letterSpacing: "0.2em",
-    color: COLOR.khakiLight,
-    fontWeight: 600,
-  },
-  dayProgressBar: {
-    flex: 1,
-    height: "1px",
-    background: COLOR.khakiDeep,
-    position: "relative",
-  },
-  dayProgressFill: {
-    position: "absolute",
-    top: "-2px",
-    left: 0,
-    height: "5px",
-    background: COLOR.accentBrass,
-    transition: "width 0.4s ease",
-  },
-  dayProgressText: {
+  workoutProgress: {
+    fontSize: "13px",
     fontFamily: "'Geist Mono', monospace",
-    fontSize: "12px",
     fontWeight: 700,
-    color: COLOR.accentBrass,
+    color: COLOR.yellowDeep,
   },
 
-  // === EXERCISE LIST ===
-  exerciseList: {
-    padding: "24px 20px",
-  },
-  muscleGroup: {
+  // 근육 그룹 섹션
+  kkMuscleSection: {
     marginBottom: "28px",
   },
-  muscleGroupHeader: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: "12px",
-    marginBottom: "12px",
-    paddingBottom: "10px",
-    borderBottom: `1px solid ${COLOR.line}`,
-  },
-  muscleNumber: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "16px",
-    color: COLOR.accentBrass,
-    fontWeight: 500,
-  },
-  muscleNameWrap: {
-    flex: 1,
+  kkMuscleSectionHeader: {
     display: "flex",
     alignItems: "baseline",
     gap: "8px",
+    marginBottom: "10px",
+    paddingBottom: "8px",
+    borderBottom: `1.5px solid ${COLOR.line}`,
   },
-  muscleName: {
+  kkMuscleSectionTitle: {
     fontFamily: "'KakaoBigFont', sans-serif",
-    fontWeight: 700,
+    fontWeight: 800,
     fontSize: "20px",
-    letterSpacing: "-0.02em",
-    color: COLOR.textDark,
+    color: COLOR.text,
+    letterSpacing: "-0.03em",
   },
-  muscleNameKo: {
-    fontSize: "10px",
-    letterSpacing: "0.15em",
+  kkMuscleSectionSub: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "11px",
     color: COLOR.textMute,
-    fontWeight: 500,
+    fontWeight: 400,
   },
-  muscleSetsBadge: {
-    fontSize: "9px",
-    letterSpacing: "0.25em",
-    color: COLOR.brownMid,
-    fontWeight: 600,
-    padding: "3px 8px",
-    border: `1px solid ${COLOR.brownLight}`,
-    borderRadius: "1px",
-  },
-  exerciseCard: {
-    background: "rgba(255,255,255,0.3)",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "2px",
-    padding: "14px 12px",
+
+  // 운동 카드
+  kkExCard: {
+    background: COLOR.white,
+    borderRadius: "16px",
+    boxShadow: COLOR.shadow,
+    padding: "16px 14px",
     marginBottom: "8px",
     cursor: "pointer",
     display: "flex",
+    alignItems: "center",
     gap: "12px",
-    alignItems: "stretch",
   },
-  exerciseCardLeft: {
+  kkExCardDone: {
+    opacity: 0.5,
+    background: COLOR.bgGray,
+  },
+  kkExCardLeft: {
     display: "flex",
     alignItems: "flex-start",
     paddingTop: "2px",
   },
-  exerciseIndex: {
+  kkExCardIdx: {
+    width: "24px",
+    height: "24px",
+    borderRadius: "50%",
+    background: COLOR.bgSub,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     fontFamily: "'Geist Mono', monospace",
-    fontSize: "14px",
-    color: COLOR.accentBrass,
-    fontWeight: 500,
-    width: "20px",
-    textAlign: "center",
+    fontWeight: 700,
+    fontSize: "12px",
+    color: COLOR.yellowDeep,
   },
-  exerciseCardMain: {
+  kkExCardMain: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
-    gap: "6px",
+    gap: "4px",
   },
-  exerciseTopRow: {
-    display: "flex",
-    alignItems: "center",
-  },
-  exerciseName: {
+  kkExCardName: {
     fontFamily: "'KakaoBigFont', sans-serif",
     fontWeight: 700,
-    fontSize: "15px",
-    color: COLOR.textDark,
-    letterSpacing: "-0.01em",
-    display: "flex",
-    alignItems: "center",
+    fontSize: "16px",
+    color: COLOR.text,
+    letterSpacing: "-0.02em",
   },
-  exerciseNameEn: {
-    fontFamily: "\'Geist Mono\', monospace",
-    fontSize: "11px",
+  kkExCardNameEn: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "12px",
     color: COLOR.textMute,
     fontWeight: 400,
   },
-  exerciseMetaRow: {
+  kkExCardPills: {
     display: "flex",
-    gap: "6px",
+    gap: "5px",
     flexWrap: "wrap",
     marginTop: "4px",
   },
-  metaPill: {
-    fontSize: "9px",
-    letterSpacing: "0.1em",
-    color: COLOR.khakiDeep,
+  kkPill: {
+    background: COLOR.bgSub,
+    borderRadius: "100px",
+    padding: "3px 10px",
+    fontSize: "10px",
+    color: COLOR.textSub,
     fontWeight: 600,
-    padding: "2px 6px",
-    background: "rgba(168, 144, 96, 0.12)",
-    borderRadius: "1px",
+    fontFamily: "'Geist Mono', monospace",
   },
-  exerciseSuggestion: {
+  kkExCardSuggestion: {
     display: "flex",
     alignItems: "center",
     gap: "5px",
     marginTop: "6px",
-    paddingTop: "8px",
-    borderTop: `1px dashed ${COLOR.line}`,
-    fontSize: "10px",
-    letterSpacing: "0.15em",
-    color: COLOR.accentGreen,
-    fontWeight: 600,
-  },
-  suggestionUp: {
-    marginLeft: "auto",
-    color: COLOR.accentBrass,
-  },
-  exerciseCardRight: {
-    display: "flex",
-    alignItems: "center",
-    paddingLeft: "4px",
-  },
-
-  // === EXERCISE PAGE ===
-  exercisePage: {
-    animation: "fadeUp 0.5s ease",
-    paddingBottom: "40px",
-    position: "relative",
-    zIndex: 1,
-  },
-  exHeader: {
-    background: `linear-gradient(180deg, ${COLOR.bgDark} 0%, ${COLOR.bgDarkDeep} 100%)`,
-    color: COLOR.bgPaper,
-    padding: "calc(16px + env(safe-area-inset-top, 0px)) 20px 28px",
-  },
-  exHeaderContent: {
-    paddingTop: "8px",
-  },
-  exTypeRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "12px",
-  },
-  exType: {
-    fontSize: "9px",
-    letterSpacing: "0.3em",
-    color: COLOR.accentBrass,
-    fontWeight: 600,
-  },
-  exChapter: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "12px",
-    color: COLOR.khakiLight,
-    fontWeight: 500,
-  },
-  exTitleKo: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontWeight: 800,
-    fontSize: "32px",
-    letterSpacing: "-0.04em",
-    lineHeight: 1.05,
-    color: COLOR.bgPaper,
-    marginBottom: "4px",
-  },
-  exTitleEn: {
-    fontFamily: "\'Geist Mono\', monospace",
-    fontSize: "14px",
-    fontWeight: 400,
-    color: COLOR.khakiLight,
-    marginBottom: "20px",
-  },
-  exTargetGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    gap: "1px",
-    background: COLOR.khakiDeep,
-    border: `1px solid ${COLOR.khakiDeep}`,
-  },
-  exTargetCell: {
-    background: COLOR.bgDark,
-    padding: "10px 6px",
-    textAlign: "center",
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-  },
-  exTargetLabel: {
-    fontSize: "8px",
-    letterSpacing: "0.25em",
-    color: COLOR.khakiLight,
-    fontWeight: 600,
-  },
-  exTargetValue: {
-    fontFamily: "'Geist Mono', monospace",
-    fontWeight: 800,
-    fontSize: "20px",
-    color: COLOR.accentBrass,
-    lineHeight: 1,
-  },
-  exTargetValueSmall: {
-    fontFamily: "'Geist Mono', monospace",
-    fontWeight: 600,
-    fontSize: "13px",
-    color: COLOR.accentBrass,
-    lineHeight: 1.2,
-  },
-
-  // === SUGGESTION CARD ===
-  suggestionCard: {
-    margin: "20px",
-    background: `linear-gradient(135deg, #f0eadc 0%, ${COLOR.bgPaper} 100%)`,
-    border: `1px solid ${COLOR.khakiMid}`,
-    borderRadius: "2px",
-    position: "relative",
-    boxShadow: "0 1px 0 rgba(255,255,255,0.5) inset, 0 6px 20px -10px rgba(31, 28, 23, 0.2)",
-  },
-  suggestionInner: {
-    padding: "18px",
-  },
-  suggestionTopRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    marginBottom: "14px",
-    paddingBottom: "10px",
-    borderBottom: `1px dashed ${COLOR.line}`,
-  },
-  suggestionTitle: {
-    fontSize: "9px",
-    letterSpacing: "0.3em",
-    color: COLOR.khakiDeep,
-    fontWeight: 700,
-    flex: 1,
-  },
-  suggestionTag: {
-    fontSize: "8px",
-    letterSpacing: "0.2em",
-    color: COLOR.bgPaper,
-    fontWeight: 700,
-    background: COLOR.accentGreen,
-    padding: "2px 6px",
-    borderRadius: "1px",
-  },
-  suggestionMessage: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontWeight: 700,
-    fontSize: "16px",
-    color: COLOR.textDark,
-    marginBottom: "16px",
-    letterSpacing: "-0.01em",
-  },
-  suggestionStats: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "16px",
-  },
-  suggestionPrev: {
-    flex: 1,
-  },
-  suggestionPrevLabel: {
-    fontSize: "8px",
-    letterSpacing: "0.25em",
-    color: COLOR.textMute,
-    fontWeight: 600,
-    marginBottom: "4px",
-  },
-  suggestionPrevValue: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "26px",
-    fontWeight: 600,
-    color: COLOR.textMute,
-    letterSpacing: "-0.02em",
-    lineHeight: 1,
-    textDecoration: "line-through",
-    textDecorationColor: COLOR.textLight,
-  },
-  kgSmall: {
-    fontSize: "12px",
-    fontWeight: 500,
-    marginLeft: "2px",
-    color: COLOR.textMute,
-  },
-  suggestionArrow: {
-    display: "flex",
-    alignItems: "center",
-    color: COLOR.accentBrass,
-    fontSize: "10px",
-    gap: "2px",
-  },
-  arrowLine: {
-    display: "inline-block",
-    width: "16px",
-    height: "1px",
-    background: COLOR.accentBrass,
-  },
-  arrowHead: {
-    fontSize: "8px",
-  },
-  suggestionNext: {
-    flex: 1,
-  },
-  suggestionNextLabel: {
-    fontSize: "8px",
-    letterSpacing: "0.25em",
-    color: COLOR.brownMid,
-    fontWeight: 700,
-    marginBottom: "4px",
-  },
-  suggestionNextValue: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "32px",
-    fontWeight: 800,
-    color: COLOR.bgDark,
-    letterSpacing: "-0.03em",
-    lineHeight: 1,
-  },
-  applyBtn: {
-    width: "100%",
-    background: COLOR.bgDark,
-    color: COLOR.bgPaper,
-    padding: "12px",
-    borderRadius: "1px",
-    fontSize: "10px",
-    letterSpacing: "0.3em",
-    fontWeight: 600,
-    border: `1px solid ${COLOR.bgDark}`,
-  },
-
-  // === START CARD ===
-  startCard: {
-    margin: "20px",
-    background: "rgba(255,255,255,0.4)",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "2px",
-    position: "relative",
-  },
-  startInner: {
-    padding: "18px",
-  },
-  startTitle: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "16px",
-    fontWeight: 700,
-    color: COLOR.textDark,
-    marginBottom: "8px",
-  },
-  startMsg: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontSize: "13px",
-    color: COLOR.textMid,
-    lineHeight: 1.6,
-  },
-
-  // === SETS ===
-  setsBlock: {
-    margin: "20px",
-  },
-  setsBlockHeader: {
-    marginBottom: "12px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingBottom: "10px",
-    borderBottom: `1px solid ${COLOR.line}`,
-    gap: "12px",
-  },
-  setsBlockTitleWrap: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-  },
-  setsBlockTitle: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontSize: "20px",
-    fontWeight: 800,
-    color: COLOR.textDark,
-    letterSpacing: "-0.03em",
-    lineHeight: 1,
-  },
-  setsBlockSub: {
-    fontSize: "9px",
-    letterSpacing: "0.2em",
-    color: COLOR.textMute,
-    fontWeight: 600,
-  },
-  setsTable: {
-    background: "rgba(255,255,255,0.3)",
-    border: `1px solid ${COLOR.line}`,
-  },
-  setsTableHeader: {
-    display: "grid",
-    gridTemplateColumns: "60px 1fr 1fr",
-    background: COLOR.khakiDeep,
-    color: COLOR.bgPaper,
-  },
-  setsHeadIdx: {
-    padding: "8px 12px",
-    fontSize: "9px",
-    letterSpacing: "0.25em",
-    fontWeight: 600,
-    textAlign: "center",
-  },
-  setsHeadCell: {
-    padding: "8px 12px",
-    fontSize: "9px",
-    letterSpacing: "0.2em",
-    fontWeight: 600,
-    borderLeft: `1px solid ${COLOR.bgPaperDeep}33`,
-  },
-  setRow: {
-    display: "grid",
-    gridTemplateColumns: "60px 1fr",
-    borderTop: `1px solid ${COLOR.line}`,
-  },
-  setRowIdx: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "16px",
-    fontWeight: 500,
-    color: COLOR.accentBrass,
-    textAlign: "center",
-    padding: "14px 0",
-    borderRight: `1px solid ${COLOR.line}`,
-    background: "rgba(168, 144, 96, 0.06)",
-  },
-  setRowInputs: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-  },
-  setInput: {
-    padding: "14px 12px",
-    border: "none",
-    fontSize: "20px",
-    fontWeight: 700,
-    fontFamily: "'Geist Mono', monospace",
-    background: "transparent",
-    outline: "none",
-    color: COLOR.textDark,
-    width: "100%",
-    textAlign: "center",
-    borderLeft: `1px solid ${COLOR.line}`,
-    letterSpacing: "-0.02em",
-  },
-
-  // === SAVE BUTTON ===
-  saveBtn: {
-    background: COLOR.bgDark,
-    color: COLOR.bgPaper,
-    padding: "16px",
-    borderRadius: "1px",
     fontSize: "11px",
-    letterSpacing: "0.3em",
-    fontWeight: 600,
-    margin: "0 20px 24px",
-    width: "calc(100% - 40px)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    border: `1px solid ${COLOR.bgDark}`,
-  },
-  saveBtnArrow: {
+    color: COLOR.textSub,
     fontFamily: "'Geist Mono', monospace",
-    fontSize: "16px",
-    color: COLOR.accentBrass,
+    fontWeight: 600,
   },
 
-  // === HISTORY ===
-  historyBlock: {
-    margin: "0 20px",
-  },
-  historyToggle: {
+  // 운동 추가 버튼
+  kkAddExBtn: {
     width: "100%",
-    padding: "12px 14px",
-    background: "rgba(255,255,255,0.3)",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "1px",
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    color: COLOR.khakiDeep,
-  },
-  historyToggleLabel: {
-    flex: 1,
-    textAlign: "left",
-    fontSize: "10px",
-    letterSpacing: "0.2em",
-    fontWeight: 600,
-  },
-  historyList: {
-    marginTop: "10px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-  },
-  historyCard: {
-    background: "rgba(255,255,255,0.3)",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "2px",
-    position: "relative",
-  },
-  historyCardInner: {
-    padding: "12px 14px",
-  },
-  historyTopRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "10px",
-    paddingBottom: "8px",
-    borderBottom: `1px dashed ${COLOR.line}`,
-  },
-  historyDate: {
-    fontFamily: "'KakaoBigFont', sans-serif",
-    fontSize: "13px",
-    fontWeight: 700,
-    color: COLOR.textDark,
-    display: "flex",
-    alignItems: "baseline",
-    gap: "8px",
-  },
-  historyDay: {
-    fontFamily: "'Geist Mono', monospace",
-    fontStyle: "normal",
-    fontSize: "9px",
-    letterSpacing: "0.2em",
-    color: COLOR.textMute,
-    fontWeight: 600,
-  },
-  historyDelete: {
-    color: COLOR.textLight,
-    padding: "2px",
-  },
-  historySetGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "6px 16px",
-    marginBottom: "10px",
-  },
-  historySetItem: {
-    display: "flex",
-    gap: "6px",
-    alignItems: "baseline",
-    fontSize: "12px",
-  },
-  historySetNum: {
-    fontSize: "9px",
-    letterSpacing: "0.15em",
-    color: COLOR.accentBrass,
-    fontWeight: 700,
-  },
-  historySetVal: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "13px",
-    fontWeight: 600,
-    color: COLOR.textDark,
-  },
-  kgTiny: {
-    fontSize: "9px",
-    color: COLOR.textMute,
-    marginLeft: "1px",
-  },
-  historyVolumeRow: {
-    paddingTop: "8px",
-    borderTop: `1px dashed ${COLOR.line}`,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "baseline",
-  },
-  historyVolLabel: {
-    fontSize: "8px",
-    letterSpacing: "0.25em",
-    color: COLOR.textMute,
-    fontWeight: 600,
-  },
-  historyVolValue: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "14px",
-    fontWeight: 700,
-    color: COLOR.brownMid,
-  },
-
-  // === ADD EXERCISE BUTTON ===
-  addExerciseBtn: {
-    width: "100%",
-    padding: "11px",
-    marginTop: "6px",
-    border: `1px dashed ${COLOR.khakiMid}`,
-    borderRadius: "2px",
+    padding: "14px",
+    border: `1.5px dashed ${COLOR.line}`,
+    borderRadius: "16px",
     background: "transparent",
-    color: COLOR.khakiDeep,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addExerciseBtnLabel: {
-    fontSize: "11px",
-    letterSpacing: "0.2em",
+    color: COLOR.textMute,
+    fontSize: "13px",
     fontWeight: 600,
+    cursor: "pointer",
+    marginTop: "4px",
+    fontFamily: "'KakaoBigFont', sans-serif",
   },
 
-  // === EXERCISE EDIT SHEET ===
+  // ===== ExerciseEditSheet =====
   sheetOverlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(15, 13, 10, 0.65)",
+    background: "rgba(0,0,0,0.45)",
     zIndex: 300,
     display: "flex",
     alignItems: "flex-end",
   },
   sheet: {
     width: "100%",
-    background: `linear-gradient(180deg, #f5efdf 0%, ${COLOR.bgPaper} 100%)`,
-    borderRadius: "10px 10px 0 0",
-    border: `1px solid ${COLOR.line}`,
-    borderBottom: "none",
+    background: COLOR.white,
+    borderRadius: "20px 20px 0 0",
     maxHeight: "90vh",
     overflowY: "auto",
     animation: "slideUp 0.28s ease",
+    paddingBottom: "env(safe-area-inset-bottom, 0px)",
   },
   sheetHandleWrap: {
     display: "flex",
@@ -2693,38 +2046,29 @@ const styles = {
   sheetHeader: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    padding: "12px 20px 0",
-    marginBottom: "4px",
+    alignItems: "center",
+    padding: "8px 20px 4px",
   },
-  sheetTitleBlock: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-  },
+  sheetTitleBlock: {},
   sheetTitle: {
     fontFamily: "'KakaoBigFont', sans-serif",
     fontWeight: 800,
     fontSize: "22px",
+    color: COLOR.text,
     letterSpacing: "-0.03em",
-    color: COLOR.textDark,
-  },
-  sheetTitleSub: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "9px",
-    letterSpacing: "0.35em",
-    color: COLOR.textMute,
-    fontWeight: 500,
   },
   sheetCloseBtn: {
-    fontSize: "26px",
+    fontSize: "28px",
     fontWeight: 300,
-    color: COLOR.khakiMid,
+    color: COLOR.textMute,
     lineHeight: 1,
     padding: "0 4px",
+    background: "none",
+    border: "none",
+    cursor: "pointer",
   },
   sheetBody: {
-    padding: "16px 20px 40px",
+    padding: "16px 20px 32px",
     display: "flex",
     flexDirection: "column",
     gap: "16px",
@@ -2735,22 +2079,21 @@ const styles = {
     gap: "6px",
   },
   sheetFieldLabel: {
-    fontSize: "8px",
-    letterSpacing: "0.25em",
-    color: COLOR.khakiDeep,
-    fontWeight: 700,
+    fontSize: "12px",
+    color: COLOR.textSub,
+    fontWeight: 600,
   },
   sheetInput: {
     width: "100%",
-    padding: "12px 14px",
-    border: `1px solid ${COLOR.khakiMid}`,
-    borderRadius: "2px",
+    padding: "14px",
+    border: `1.5px solid ${COLOR.line}`,
+    borderRadius: "10px",
     fontSize: "15px",
     fontWeight: 600,
     fontFamily: "'KakaoBigFont', sans-serif",
-    background: "rgba(255,255,255,0.5)",
     outline: "none",
-    color: COLOR.textDark,
+    color: COLOR.text,
+    background: COLOR.bgSub,
   },
   sheetGrid: {
     display: "grid",
@@ -2765,61 +2108,63 @@ const styles = {
   sheetInputSm: {
     width: "100%",
     padding: "10px 6px",
-    border: `1px solid ${COLOR.khakiMid}`,
-    borderRadius: "2px",
+    border: `1.5px solid ${COLOR.line}`,
+    borderRadius: "10px",
     fontSize: "14px",
     fontWeight: 700,
     fontFamily: "'Geist Mono', monospace",
-    background: "rgba(255,255,255,0.5)",
     outline: "none",
-    color: COLOR.textDark,
+    color: COLOR.text,
     textAlign: "center",
+    background: COLOR.bgSub,
   },
-  typeToggle: {
+  kkTypeToggle: {
     display: "flex",
     gap: "8px",
   },
-  typeToggleBtn: {
+  kkTypeToggleBtn: {
     flex: 1,
-    padding: "10px 8px",
-    border: `1px solid ${COLOR.khakiMid}`,
-    borderRadius: "2px",
-    fontSize: "10px",
-    letterSpacing: "0.15em",
+    padding: "11px 8px",
+    border: `1.5px solid ${COLOR.line}`,
+    borderRadius: "10px",
+    fontSize: "13px",
     fontWeight: 700,
-    color: COLOR.khakiMid,
-    background: "rgba(255,255,255,0.3)",
-    fontFamily: "'Geist Mono', monospace",
+    color: COLOR.textMute,
+    background: COLOR.bgSub,
+    cursor: "pointer",
+    fontFamily: "'KakaoBigFont', sans-serif",
     transition: "all 0.15s ease",
   },
-  typeToggleBtnActive: {
-    background: COLOR.bgDark,
-    color: COLOR.accentBrass,
-    borderColor: COLOR.bgDark,
+  kkTypeToggleBtnActive: {
+    background: COLOR.yellow,
+    color: COLOR.text,
+    borderColor: COLOR.yellow,
   },
   sheetSaveBtn: {
     width: "100%",
     padding: "15px",
-    background: COLOR.bgDark,
-    color: COLOR.bgPaper,
-    borderRadius: "2px",
-    fontSize: "12px",
+    background: COLOR.yellow,
+    color: COLOR.text,
+    borderRadius: "12px",
+    fontSize: "15px",
     fontWeight: 700,
-    letterSpacing: "0.25em",
     fontFamily: "'KakaoBigFont', sans-serif",
+    border: "none",
+    cursor: "pointer",
+    boxShadow: COLOR.shadowYellow,
     marginTop: "4px",
   },
   sheetDeleteBtn: {
     width: "100%",
     padding: "13px",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "2px",
-    fontSize: "12px",
+    border: `1.5px solid ${COLOR.line}`,
+    borderRadius: "12px",
+    fontSize: "14px",
     fontWeight: 600,
-    letterSpacing: "0.1em",
-    color: "#a05040",
+    color: COLOR.red,
     background: "transparent",
     fontFamily: "'KakaoBigFont', sans-serif",
+    cursor: "pointer",
   },
   sheetDeleteConfirm: {
     display: "flex",
@@ -2829,111 +2174,523 @@ const styles = {
   },
   sheetDeleteConfirmText: {
     flex: 1,
-    fontSize: "13px",
+    fontSize: "14px",
     fontWeight: 600,
-    color: COLOR.textMid,
-    letterSpacing: "-0.01em",
+    color: COLOR.textSub,
   },
   sheetDeleteConfirmYes: {
     padding: "10px 18px",
-    background: "#a05040",
-    color: COLOR.bgPaper,
-    borderRadius: "2px",
-    fontSize: "12px",
+    background: COLOR.red,
+    color: COLOR.white,
+    borderRadius: "10px",
+    fontSize: "13px",
     fontWeight: 700,
-    letterSpacing: "0.1em",
+    border: "none",
+    cursor: "pointer",
   },
   sheetDeleteConfirmNo: {
     padding: "10px 18px",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "2px",
-    fontSize: "12px",
+    border: `1.5px solid ${COLOR.line}`,
+    borderRadius: "10px",
+    fontSize: "13px",
     fontWeight: 600,
     color: COLOR.textMute,
     background: "transparent",
+    cursor: "pointer",
   },
 
-  // === REST TIMER ===
+  // ===== ExerciseView =====
+  exercisePage: {
+    minHeight: "100vh",
+    background: COLOR.bgSub,
+    paddingBottom: "40px",
+  },
+  kkExHeader: {
+    background: COLOR.white,
+    borderBottom: `1px solid ${COLOR.line}`,
+    padding: "calc(env(safe-area-inset-top, 12px) + 12px) 16px 12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    position: "sticky",
+    top: 0,
+    zIndex: 50,
+  },
+  kkExHeaderTitle: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 800,
+    fontSize: "18px",
+    color: COLOR.text,
+    letterSpacing: "-0.03em",
+    flex: 1,
+    textAlign: "center",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  exContent: {
+    padding: "16px 16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+  },
+
+  // 운동 메타 카드
+  exMetaCard: {
+    background: COLOR.white,
+    borderRadius: "16px",
+    padding: "18px",
+    boxShadow: COLOR.shadow,
+  },
+  exMetaNameEn: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "12px",
+    color: COLOR.textMute,
+    marginBottom: "8px",
+  },
+  exMetaTypeBadge: {
+    display: "inline-block",
+    fontSize: "11px",
+    fontWeight: 600,
+    color: COLOR.textSub,
+    background: COLOR.bgSub,
+    borderRadius: "100px",
+    padding: "4px 12px",
+    marginBottom: "16px",
+  },
+  exMetaGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: "8px",
+  },
+  exMetaCell: {
+    background: COLOR.bgSub,
+    borderRadius: "10px",
+    padding: "10px 6px",
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  exMetaCellLabel: {
+    fontSize: "10px",
+    color: COLOR.textMute,
+    fontWeight: 600,
+    letterSpacing: "0.05em",
+  },
+  exMetaCellValue: {
+    fontFamily: "'Geist Mono', monospace",
+    fontWeight: 800,
+    fontSize: "17px",
+    color: COLOR.text,
+    lineHeight: 1,
+  },
+
+  // 점진적 과부하 카드
+  kkSuggestionCard: {
+    background: "#FFF8B0",
+    borderRadius: "16px",
+    border: `1.5px solid ${COLOR.yellow}`,
+    padding: "18px",
+  },
+  kkSuggestionTop: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginBottom: "10px",
+  },
+  kkSuggestionLabel: {
+    flex: 1,
+    fontWeight: 700,
+    fontSize: "13px",
+    color: COLOR.text,
+  },
+  kkSuggestionAI: {
+    fontSize: "10px",
+    fontWeight: 700,
+    color: COLOR.white,
+    background: COLOR.green,
+    padding: "2px 7px",
+    borderRadius: "100px",
+  },
+  kkSuggestionMsg: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "16px",
+    color: COLOR.text,
+    marginBottom: "14px",
+  },
+  kkSuggestionStats: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    marginBottom: "14px",
+  },
+  kkSuggestionBlock: {
+    flex: 1,
+  },
+  kkSuggestionBlockLabel: {
+    fontSize: "10px",
+    color: COLOR.textMute,
+    fontWeight: 600,
+    marginBottom: "4px",
+  },
+  kkSuggestionBlockValue: {
+    fontFamily: "'Geist Mono', monospace",
+    fontWeight: 800,
+    fontSize: "28px",
+    letterSpacing: "-0.03em",
+    lineHeight: 1,
+  },
+  kkSuggestionArrow: {
+    fontSize: "18px",
+    color: COLOR.yellowDeep,
+    fontWeight: 700,
+  },
+  kkApplyBtn: {
+    width: "100%",
+    padding: "12px",
+    background: COLOR.yellow,
+    color: COLOR.text,
+    borderRadius: "10px",
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "14px",
+    border: "none",
+    cursor: "pointer",
+    boxShadow: COLOR.shadowYellow,
+  },
+
+  // 첫 세션 안내
+  kkStartCard: {
+    background: COLOR.white,
+    borderRadius: "16px",
+    padding: "18px",
+    boxShadow: COLOR.shadow,
+  },
+  kkStartTitle: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "15px",
+    color: COLOR.text,
+    marginBottom: "6px",
+  },
+  kkStartMsg: {
+    fontSize: "13px",
+    color: COLOR.textSub,
+    lineHeight: 1.6,
+  },
+
+  // 세트 입력 블록
+  kkSetsBlock: {
+    background: COLOR.white,
+    borderRadius: "16px",
+    boxShadow: COLOR.shadow,
+    overflow: "hidden",
+  },
+  kkSetsBlockHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "16px 16px 12px",
+    borderBottom: `1px solid ${COLOR.line}`,
+  },
+  kkSetsBlockTitle: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "16px",
+    color: COLOR.text,
+    letterSpacing: "-0.02em",
+  },
+  kkSetsBlockSub: {
+    fontSize: "12px",
+    color: COLOR.textMute,
+    fontWeight: 500,
+  },
+  kkSetsTable: {
+    // 테이블 컨테이너
+  },
+  kkSetsTableHeader: {
+    display: "grid",
+    gridTemplateColumns: "56px 1fr 1fr",
+    background: COLOR.bgSub,
+  },
+  kkSetsHeadIdx: {
+    padding: "10px 12px",
+    fontSize: "10px",
+    fontWeight: 700,
+    color: COLOR.textMute,
+    textAlign: "center",
+    fontFamily: "'Geist Mono', monospace",
+    letterSpacing: "0.1em",
+  },
+  kkSetsHeadCell: {
+    padding: "10px 12px",
+    fontSize: "10px",
+    fontWeight: 700,
+    color: COLOR.textMute,
+    borderLeft: `1px solid ${COLOR.line}`,
+    fontFamily: "'Geist Mono', monospace",
+    letterSpacing: "0.05em",
+  },
+  kkSetRow: {
+    display: "grid",
+    gridTemplateColumns: "56px 1fr",
+    borderTop: `1px solid ${COLOR.line}`,
+  },
+  kkSetRowIdx: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "15px",
+    fontWeight: 700,
+    color: COLOR.yellowDeep,
+    textAlign: "center",
+    padding: "14px 0",
+    borderRight: `1px solid ${COLOR.line}`,
+    background: COLOR.yellowSoft,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  kkSetRowInputs: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+  },
+  kkSetInput: {
+    padding: "14px 12px",
+    border: "none",
+    fontSize: "20px",
+    fontWeight: 700,
+    fontFamily: "'Geist Mono', monospace",
+    background: "transparent",
+    outline: "none",
+    color: COLOR.text,
+    width: "100%",
+    textAlign: "center",
+    borderLeft: `1px solid ${COLOR.line}`,
+    letterSpacing: "-0.02em",
+  },
+
+  // RECORD SESSION 버튼
+  kkRecordBtn: {
+    width: "100%",
+    padding: "16px",
+    borderRadius: "14px",
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "15px",
+    border: "none",
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    letterSpacing: "-0.01em",
+  },
+
+  // 히스토리
+  kkHistoryBlock: {},
+  kkHistoryToggle: {
+    width: "100%",
+    padding: "14px 16px",
+    background: COLOR.white,
+    borderRadius: "14px",
+    border: "none",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    color: COLOR.textMute,
+    cursor: "pointer",
+    boxShadow: COLOR.shadow,
+  },
+  kkHistoryToggleLabel: {
+    flex: 1,
+    textAlign: "left",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: COLOR.textSub,
+  },
+  kkHistoryList: {
+    marginTop: "8px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
+  kkHistoryCard: {
+    background: COLOR.white,
+    borderRadius: "14px",
+    padding: "14px 16px",
+    boxShadow: COLOR.shadow,
+  },
+  kkHistoryCardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "10px",
+    paddingBottom: "10px",
+    borderBottom: `1px solid ${COLOR.line}`,
+  },
+  kkHistoryDate: {
+    fontFamily: "'KakaoBigFont', sans-serif",
+    fontWeight: 700,
+    fontSize: "13px",
+    color: COLOR.text,
+  },
+  kkHistoryDelete: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "2px",
+  },
+  kkHistorySetGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: "6px 12px",
+    marginBottom: "10px",
+  },
+  kkHistorySetItem: {
+    display: "flex",
+    gap: "6px",
+    alignItems: "baseline",
+  },
+  kkHistorySetNum: {
+    fontSize: "10px",
+    fontWeight: 700,
+    color: COLOR.yellowDeep,
+    fontFamily: "'Geist Mono', monospace",
+  },
+  kkHistorySetVal: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: COLOR.text,
+  },
+  kkHistoryVolRow: {
+    paddingTop: "8px",
+    borderTop: `1px solid ${COLOR.line}`,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+  },
+  kkHistoryVolLabel: {
+    fontSize: "11px",
+    color: COLOR.textMute,
+    fontWeight: 600,
+  },
+  kkHistoryVolValue: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "14px",
+    fontWeight: 700,
+    color: COLOR.textSub,
+  },
+
+  // 단위 표시용 작은 텍스트
+  unitSm: {
+    fontSize: "13px",
+    fontWeight: 500,
+    marginLeft: "2px",
+    color: COLOR.textMute,
+  },
+  unitTiny: {
+    fontSize: "10px",
+    color: COLOR.textMute,
+    marginLeft: "1px",
+  },
+
+  // ===== 단위 토글 =====
+  unitToggle: {
+    display: "inline-flex",
+    background: COLOR.bgSub,
+    borderRadius: "8px",
+    overflow: "hidden",
+    border: `1.5px solid ${COLOR.line}`,
+  },
+  unitToggleBtn: {
+    fontFamily: "'Geist Mono', monospace",
+    fontSize: "10px",
+    letterSpacing: "0.1em",
+    fontWeight: 700,
+    padding: "6px 10px",
+    color: COLOR.textMute,
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+  },
+  unitToggleBtnActive: {
+    background: COLOR.yellow,
+    color: COLOR.text,
+  },
+
+  // ===== REST TIMER =====
   timerDoneOverlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(15, 13, 10, 0.92)",
+    background: "rgba(0,0,0,0.88)",
     zIndex: 200,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    animation: "fadeUp 0.3s ease",
+    animation: "fadeIn 0.3s ease",
     cursor: "pointer",
   },
   timerDoneBox: {
     textAlign: "center",
-    color: COLOR.bgPaper,
+    color: COLOR.white,
     padding: "48px 40px",
   },
-  timerDoneMark: {
-    fontSize: "48px",
-    color: COLOR.accentBrass,
+  timerDoneEmoji: {
+    fontSize: "56px",
     marginBottom: "20px",
     animation: "pulse 1.5s ease-in-out infinite",
   },
   timerDoneTitle: {
     fontFamily: "'KakaoBigFont', sans-serif",
     fontWeight: 800,
-    fontSize: "52px",
-    letterSpacing: "-0.04em",
-    color: COLOR.bgPaper,
+    fontSize: "48px",
+    color: COLOR.yellow,
     marginBottom: "8px",
     lineHeight: 1,
+    letterSpacing: "-0.04em",
   },
   timerDoneSub: {
-    fontFamily: "'Geist Mono', monospace",
-    fontSize: "11px",
-    letterSpacing: "0.5em",
-    color: COLOR.accentBrass,
-    marginBottom: "36px",
-    paddingLeft: "0.5em",
+    fontSize: "16px",
+    color: "rgba(255,255,255,0.8)",
+    marginBottom: "32px",
   },
   timerDoneTap: {
-    fontSize: "11px",
-    letterSpacing: "0.1em",
-    color: COLOR.khakiLight,
-    fontWeight: 400,
+    fontSize: "12px",
+    color: "rgba(255,255,255,0.4)",
   },
-  timerBlock: {
-    margin: "0 20px 24px",
-    background: "rgba(255,255,255,0.3)",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "2px",
+  kkTimerBlock: {
+    background: COLOR.white,
+    borderRadius: "16px",
     padding: "18px",
-    position: "relative",
+    boxShadow: COLOR.shadow,
   },
-  timerHeader: {
+  kkTimerHeader: {
     display: "flex",
-    alignItems: "baseline",
+    alignItems: "center",
     gap: "8px",
     marginBottom: "16px",
-    paddingBottom: "10px",
-    borderBottom: `1px dashed ${COLOR.line}`,
+    paddingBottom: "12px",
+    borderBottom: `1px solid ${COLOR.line}`,
   },
-  timerLabel: {
+  kkTimerLabel: {
     fontFamily: "'Geist Mono', monospace",
-    fontSize: "10px",
-    letterSpacing: "0.3em",
-    fontWeight: 600,
-    color: COLOR.khakiDeep,
+    fontSize: "11px",
+    letterSpacing: "0.2em",
+    fontWeight: 700,
+    color: COLOR.textSub,
   },
-  timerLabelKo: {
-    fontSize: "9px",
-    letterSpacing: "0.1em",
+  kkTimerLabelKo: {
+    fontSize: "12px",
     color: COLOR.textMute,
     fontWeight: 500,
   },
-  timerDisplay: {
+  kkTimerDisplay: {
     textAlign: "center",
     marginBottom: "16px",
     lineHeight: 1,
   },
-  timerDigits: {
+  kkTimerDigits: {
     fontFamily: "'Geist Mono', monospace",
     fontWeight: 800,
     fontSize: "56px",
@@ -2941,48 +2698,50 @@ const styles = {
     lineHeight: 1,
     transition: "color 0.4s ease",
   },
-  timerAddRow: {
+  kkTimerAddRow: {
     display: "flex",
     gap: "8px",
     marginBottom: "10px",
   },
-  timerAddBtn: {
+  kkTimerAddBtn: {
     flex: 1,
     padding: "11px 0",
-    border: `1px solid ${COLOR.khakiMid}`,
-    borderRadius: "1px",
+    background: COLOR.bgSub,
+    border: "none",
+    borderRadius: "10px",
     fontSize: "14px",
     fontWeight: 700,
-    color: COLOR.khakiDeep,
-    background: "rgba(255,255,255,0.45)",
+    color: COLOR.textSub,
+    cursor: "pointer",
     fontFamily: "'KakaoBigFont', sans-serif",
-    letterSpacing: "-0.01em",
   },
-  timerControlRow: {
+  kkTimerControlRow: {
     display: "flex",
     gap: "8px",
   },
-  timerStartBtn: {
+  kkTimerStartBtn: {
     flex: 1,
     padding: "13px",
-    background: COLOR.bgDark,
-    color: COLOR.bgPaper,
-    borderRadius: "1px",
-    fontSize: "12px",
+    background: COLOR.yellow,
+    color: COLOR.text,
+    borderRadius: "12px",
+    fontSize: "14px",
     fontWeight: 700,
-    letterSpacing: "0.15em",
+    border: "none",
+    cursor: "pointer",
     fontFamily: "'KakaoBigFont', sans-serif",
+    boxShadow: COLOR.shadowYellow,
     transition: "opacity 0.2s ease",
   },
-  timerResetBtn: {
+  kkTimerResetBtn: {
     padding: "13px 18px",
-    border: `1px solid ${COLOR.line}`,
-    borderRadius: "1px",
-    fontSize: "12px",
+    border: `1.5px solid ${COLOR.line}`,
+    borderRadius: "12px",
+    fontSize: "13px",
     fontWeight: 600,
     color: COLOR.textMute,
-    letterSpacing: "0.1em",
     background: "transparent",
+    cursor: "pointer",
     fontFamily: "'KakaoBigFont', sans-serif",
   },
 };
